@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { electronPersistStorage } from '@/lib/electron-persist-storage'
 
 export interface AppSettings {
   headless:             boolean
@@ -40,6 +41,6 @@ export const useSettingsStore = create<SettingsStore>()(
       update:   (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
       reset:    () => set({ settings: DEFAULTS }),
     }),
-    { name: 'movie-scraping-settings' },
+    { name: 'movie-scraping-settings', storage: electronPersistStorage },
   ),
 )

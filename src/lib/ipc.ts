@@ -1,73 +1,23 @@
 /**
  * Renderer-side typed IPC wrapper.
- * Types mirror src/main/scraper.ts but are kept separate so the
- * renderer bundle never imports Node / Electron modules.
+ * Types come from `src/shared/ipc-types.ts` so they stay aligned with the main process.
  */
 
-export interface MovieData {
-  title:        string
-  url:          string
-  category:     string
-  year?:        string
-  rating?:      string
-  duration?:    string
-  director?:    string
-  cast?:        string
-  description?: string
-  poster?:      string
-  videoUrl?:    string
-  subtitles?:   string
-}
+import type {
+  MovieData,
+  ScraperConfig,
+  ScraperProgress,
+  ScraperResult,
+  StartResult,
+} from '@shared/ipc-types'
 
-export interface ScraperConfig {
-  baseUrl:               string
-  outputDir:             string
-  headless:              boolean
-  maxMoviesPerCategory?: number
-  maxPagesPerCategory?:  number
-  delayMs?:              number
-  userAgent?:            string
-  exportJson?:           boolean
-  exportExcel?:          boolean
-  exportCsv?:            boolean
-  selectors?: {
-    categories?: string
-    movieList?:  string
-    nextPage?:   string
-    detail?: {
-      title?:       string
-      year?:        string
-      rating?:      string
-      duration?:    string
-      director?:    string
-      description?: string
-      cast?:        string
-      poster?:      string
-    }
-  }
-}
-
-export interface ScraperProgress {
-  step:    1 | 2 | 3
-  label:   string
-  current: number
-  total:   number
-  message: string
-}
-
-export interface ScraperResult {
-  jsonPath?:   string
-  excelPath?:  string
-  csvPath?:    string
-  totalMovies: number
-  movies:      MovieData[]
-}
-
-export type StartResult =
-  | ({ success: true } & ScraperResult)
-  | { success: false; error: string }
-
-// ─── Global augmentation ──────────────────────────────────────────────────────
+export type {
+  MovieData,
+  ScraperConfig,
+  ScraperProgress,
+  ScraperResult,
+  StartResult,
+} from '@shared/ipc-types'
 
 declare global {
   interface Window {
@@ -78,6 +28,9 @@ declare global {
       resumeScraping: () => Promise<void>
       openPath:       (filePath: string) => Promise<void>
       selectFolder:   () => Promise<string | null>
+      storeGet:       (key: string) => Promise<string | null>
+      storeSet:       (key: string, value: string) => Promise<void>
+      storeRemove:    (key: string) => Promise<void>
       onProgress:     (cb: (p: ScraperProgress) => void) => () => void
       onLog:          (cb: (msg: string) => void)        => () => void
       onComplete:     (cb: (r: ScraperResult) => void)   => () => void

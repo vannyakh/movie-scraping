@@ -16,7 +16,8 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@/*": ["./src/renderer/*"]
+      "@/*": ["./src/renderer/*"],
+      "@shared/*": ["./src/shared/*"]
     }
   },
   "include": ["src", "electron.vite.config.ts"]

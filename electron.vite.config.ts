@@ -2,9 +2,12 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import { resolve } from 'path'
 import react from '@vitejs/plugin-react'
 
+const sharedAlias = resolve(__dirname, 'src/shared')
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    resolve: { alias: { '@shared': sharedAlias } },
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },
@@ -13,6 +16,7 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    resolve: { alias: { '@shared': sharedAlias } },
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/preload.ts') },
@@ -30,7 +34,8 @@ export default defineConfig({
     },
     resolve: {
       alias: {
-        '@': resolve(__dirname, 'src/renderer'),
+        '@':      resolve(__dirname, 'src/renderer'),
+        '@shared': sharedAlias,
       },
     },
     plugins: [react()],

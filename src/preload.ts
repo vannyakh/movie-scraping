@@ -7,6 +7,10 @@ const api = {
   resumeScraping: ()                 => ipcRenderer.invoke('scrape:resume'),
   openPath:       (p: string)        => ipcRenderer.invoke('open:path', p),
   selectFolder:   ()                 => ipcRenderer.invoke('dialog:selectFolder'),
+  storeGet:       (key: string)      => ipcRenderer.invoke('store:get', key) as Promise<string | null>,
+  storeSet:       (key: string, value: string) =>
+    ipcRenderer.invoke('store:set', key, value) as Promise<void>,
+  storeRemove:    (key: string)      => ipcRenderer.invoke('store:remove', key) as Promise<void>,
 
   onProgress:   (cb: (...a: unknown[]) => void) => {
     const h = (_: unknown, v: unknown) => cb(v)

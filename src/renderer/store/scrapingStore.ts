@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { ScraperConfig, ScraperProgress, ScraperResult, MovieData } from '../../lib/ipc'
+import { electronPersistStorage } from '@/lib/electron-persist-storage'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -151,6 +152,7 @@ export const useScrapingStore = create<ScrapingStore>()(
     }),
     {
       name:       'movie-scraping-jobs',
+      storage:    electronPersistStorage,
       partialize: (s) => ({ history: s.history }),
     },
   ),
