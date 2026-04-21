@@ -1,13 +1,14 @@
 import '@xyflow/react/dist/style.css'
-import { HashRouter, Routes, Route } from 'react-router-dom'
-import Layout       from '@/components/layout/Layout'
-import Dashboard    from '@/pages/Dashboard'
-import NewScraping  from '@/pages/NewScraping'
-import ProgressPage from '@/pages/ProgressPage'
-import Results      from '@/pages/Results'
-import HistoryPage  from '@/pages/History'
-import Settings     from '@/pages/Settings'
-import FlowBuilder  from '@/pages/FlowBuilder'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import Layout         from '@/components/layout/Layout'
+import Dashboard      from '@/pages/Dashboard'
+import Projects       from '@/pages/Projects'
+import ProjectCreate  from '@/pages/ProjectCreate'
+import ProjectDetail  from '@/pages/ProjectDetail'
+import ProgressPage   from '@/pages/ProgressPage'
+import Results        from '@/pages/Results'
+import HistoryPage    from '@/pages/History'
+import Settings       from '@/pages/Settings'
 
 export default function App() {
   if (!window.electronAPI) {
@@ -25,14 +26,20 @@ export default function App() {
   return (
     <HashRouter>
       <Routes>
+        {/* Project detail is full-screen (no sidebar layout) */}
+        <Route path="/projects/:id" element={<ProjectDetail />} />
+
         <Route element={<Layout />}>
-          <Route index         element={<Dashboard />}    />
-          <Route path="new"      element={<NewScraping />}  />
-          <Route path="progress" element={<ProgressPage />} />
-          <Route path="results"  element={<Results />}      />
-          <Route path="history"  element={<HistoryPage />}  />
-          <Route path="settings" element={<Settings />}     />
-          <Route path="flow"     element={<FlowBuilder />}  />
+          <Route index              element={<Dashboard />}     />
+          <Route path="projects"    element={<Projects />}      />
+          <Route path="projects/new" element={<ProjectCreate />} />
+          <Route path="progress"    element={<ProgressPage />}  />
+          <Route path="results"     element={<Results />}       />
+          <Route path="history"     element={<HistoryPage />}   />
+          <Route path="settings"    element={<Settings />}      />
+          {/* Legacy redirects */}
+          <Route path="new"  element={<Navigate to="/projects/new" replace />} />
+          <Route path="flow" element={<Navigate to="/projects"     replace />} />
         </Route>
       </Routes>
     </HashRouter>

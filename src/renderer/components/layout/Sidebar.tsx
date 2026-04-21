@@ -1,20 +1,19 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard, PlusCircle, Activity, Database,
-  History, Settings, Film, ChevronRight, Workflow,
+  LayoutDashboard, FolderOpen, Activity, Database,
+  History, Settings, Film, ChevronRight,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useScrapingStore } from '@/store/scrapingStore'
 
 const NAV = [
-  { to: '/',         icon: LayoutDashboard, label: 'Dashboard'    },
-  { to: '/new',      icon: PlusCircle,      label: 'New Scraping' },
-  { to: '/flow',     icon: Workflow,        label: 'Flow Builder' },
-  { to: '/progress', icon: Activity,        label: 'Active Job'   },
-  { to: '/results',  icon: Database,        label: 'Results'      },
-  { to: '/history',  icon: History,         label: 'History'      },
+  { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/projects', icon: FolderOpen,      label: 'Projects'  },
+  { to: '/progress', icon: Activity,        label: 'Active Job' },
+  { to: '/results',  icon: Database,        label: 'Results'   },
+  { to: '/history',  icon: History,         label: 'History'   },
 ]
 
 export default function Sidebar() {

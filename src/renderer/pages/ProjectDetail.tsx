@@ -11,12 +11,14 @@ import {
   useEdgesState,
   useReactFlow,
   type Node,
+  type Edge,
   type OnConnect,
 } from '@xyflow/react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
-  Play, RotateCcw, HelpCircle, X, Plus, Trash2,
+  Play, RotateCcw, Save, ArrowLeft,
+  HelpCircle, X, Plus, Trash2,
   Globe2, Layers, List, FileSearch, Download, Settings2,
   GripVertical, AlertCircle, Eye, Code2, Copy, Check,
 } from 'lucide-react'
@@ -29,6 +31,7 @@ import {
   type DetailData, type DetailField, type ExportData,
 } from '@/components/flow/nodes'
 import { useScrapingStore } from '@/store/scrapingStore'
+import { useProjectStore } from '@/store/projectStore'
 import type { ScraperConfig } from '../../lib/ipc'
 import { cn } from '@/lib/utils'
 
@@ -98,19 +101,12 @@ function flowToConfig(nodes: Node[]): ScraperConfig | null {
 
 function JsonValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
   const pad = depth * 14
-
-  if (value === null)
-    return <span className="text-slate-500 italic">null</span>
-  if (typeof value === 'boolean')
-    return <span className="text-violet-400">{String(value)}</span>
-  if (typeof value === 'number')
-    return <span className="text-emerald-400">{value}</span>
-  if (typeof value === 'string')
-    return <span className="text-amber-300">"{value}"</span>
-
+  if (value === null) return <span className="text-slate-500 italic">null</span>
+  if (typeof value === 'boolean') return <span className="text-violet-400">{String(value)}</span>
+  if (typeof value === 'number')  return <span className="text-emerald-400">{value}</span>
+  if (typeof value === 'string')  return <span className="text-amber-300">"{value}"</span>
   if (Array.isArray(value)) {
-    if (value.length === 0)
-      return <span className="text-slate-400">[]</span>
+    if (value.length === 0) return <span className="text-slate-400">[]</span>
     return (
       <>
         <span className="text-slate-400">{'['}</span>
@@ -120,17 +116,13 @@ function JsonValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
             {i < value.length - 1 && <span className="text-slate-600">,</span>}
           </div>
         ))}
-        <div style={{ paddingLeft: pad }}>
-          <span className="text-slate-400">{']'}</span>
-        </div>
+        <div style={{ paddingLeft: pad }}><span className="text-slate-400">{']'}</span></div>
       </>
     )
   }
-
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>)
-    if (entries.length === 0)
-      return <span className="text-slate-400">{'{}'}</span>
+    if (entries.length === 0) return <span className="text-slate-400">{'{}'}</span>
     return (
       <>
         <span className="text-slate-400">{'{'}</span>
@@ -142,26 +134,21 @@ function JsonValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
             {i < entries.length - 1 && <span className="text-slate-600">,</span>}
           </div>
         ))}
-        <div style={{ paddingLeft: pad }}>
-          <span className="text-slate-400">{'}'}</span>
-        </div>
+        <div style={{ paddingLeft: pad }}><span className="text-slate-400">{'}'}</span></div>
       </>
     )
   }
-
   return <span className="text-slate-300">{String(value)}</span>
 }
 
 function JsonViewer({ nodeType, nodeData }: { nodeType: string; nodeData: unknown }) {
   const [copied, setCopied] = useState(false)
   const data = getSampleData(nodeType, nodeData)
-
   const handleCopy = () => {
     navigator.clipboard.writeText(JSON.stringify(data, null, 2))
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
-
   const NODE_DESC: Record<string, string> = {
     source:    'Configuration passed to the scraper engine',
     category:  'Array of discovered category links',
@@ -169,18 +156,14 @@ function JsonViewer({ nodeType, nodeData }: { nodeType: string; nodeData: unknow
     detail:    'Extracted data for a single movie detail page',
     export:    'Export summary written alongside output files',
   }
-
   return (
     <div className="space-y-3">
-      {/* Description */}
       <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-600/10 border border-emerald-500/20">
         <Code2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
         <p className="text-[10px] text-emerald-300 leading-relaxed">
           {NODE_DESC[nodeType] ?? 'Sample output for this node type.'}
         </p>
       </div>
-
-      {/* JSON block */}
       <div className="relative rounded-lg bg-[#0a0c14] border border-[#2e3350] overflow-hidden">
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#2e3350] bg-[#0f1117]">
           <span className="text-[9px] text-slate-600 font-mono uppercase tracking-widest">sample output</span>
@@ -190,8 +173,7 @@ function JsonViewer({ nodeType, nodeData }: { nodeType: string; nodeData: unknow
           >
             {copied
               ? <><Check className="w-3 h-3 text-emerald-400" /><span className="text-emerald-400">Copied!</span></>
-              : <><Copy className="w-3 h-3" /><span>Copy</span></>
-            }
+              : <><Copy className="w-3 h-3" /><span>Copy</span></>}
           </button>
         </div>
         <div className="p-3 overflow-x-auto max-h-[420px] overflow-y-auto">
@@ -200,7 +182,6 @@ function JsonViewer({ nodeType, nodeData }: { nodeType: string; nodeData: unknow
           </pre>
         </div>
       </div>
-
       <p className="text-[9px] text-slate-600 text-center leading-relaxed">
         Sample data — actual values depend on the scraped site.
       </p>
@@ -227,15 +208,13 @@ interface NodeConfigPanelProps {
   onDeleteNode:     (id: string) => void
 }
 
-function NodeConfigPanel({ nodeId, nodes, defaultTab = 'config', onClose, onUpdateNodeData, onDeleteNode }: NodeConfigPanelProps) {
+function NodeConfigPanel({
+  nodeId, nodes, defaultTab = 'config', onClose, onUpdateNodeData, onDeleteNode,
+}: NodeConfigPanelProps) {
   const node = nodeId ? nodes.find(n => n.id === nodeId) : null
   const open = !!node
   const [tab, setTab] = useState<'config' | 'preview'>(defaultTab)
-
-  // Sync tab when panel opens with a specific tab
   useEffect(() => { setTab(defaultTab) }, [nodeId, defaultTab])
-
-  // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     if (open) window.addEventListener('keydown', handler)
@@ -252,7 +231,6 @@ function NodeConfigPanel({ nodeId, nodes, defaultTab = 'config', onClose, onUpda
     )}>
       {node && meta ? (
         <>
-          {/* Panel header */}
           <div className={cn('flex items-center gap-2.5 px-4 py-3 shrink-0', meta.bg)}>
             <Icon className="w-4 h-4 text-white shrink-0" />
             <div className="flex-1 min-w-0">
@@ -268,8 +246,6 @@ function NodeConfigPanel({ nodeId, nodes, defaultTab = 'config', onClose, onUpda
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
-
-          {/* Tabs */}
           <div className="flex shrink-0 border-b border-[#2e3350] bg-[#0f1117]">
             <button
               onClick={() => setTab('config')}
@@ -280,8 +256,7 @@ function NodeConfigPanel({ nodeId, nodes, defaultTab = 'config', onClose, onUpda
                   : 'text-slate-500 border-transparent hover:text-slate-300',
               )}
             >
-              <Settings2 className="w-3 h-3" />
-              Config
+              <Settings2 className="w-3 h-3" />Config
             </button>
             <button
               onClick={() => setTab('preview')}
@@ -292,12 +267,9 @@ function NodeConfigPanel({ nodeId, nodes, defaultTab = 'config', onClose, onUpda
                   : 'text-slate-500 border-transparent hover:text-slate-300',
               )}
             >
-              <Eye className="w-3 h-3" />
-              Preview JSON
+              <Eye className="w-3 h-3" />Preview JSON
             </button>
           </div>
-
-          {/* Panel body */}
           <div className="flex-1 overflow-y-auto p-4">
             {tab === 'config' && (
               <>
@@ -312,8 +284,6 @@ function NodeConfigPanel({ nodeId, nodes, defaultTab = 'config', onClose, onUpda
               <JsonViewer nodeType={node.type} nodeData={node.data} />
             )}
           </div>
-
-          {/* Danger zone — only on config tab */}
           {tab === 'config' && (
             <div className="shrink-0 p-4 border-t border-[#2e3350]">
               <button
@@ -342,9 +312,7 @@ function NodeConfigPanel({ nodeId, nodes, defaultTab = 'config', onClose, onUpda
 // ─── Per-type Config Panels ────────────────────────────────────────────────────
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 mt-1">{children}</p>
-  )
+  return <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 mt-1">{children}</p>
 }
 
 function SourcePanel({ id, data: d, update }: { id: string; data: SourceData; update: (id: string, patch: Partial<SourceData>) => void }) {
@@ -359,7 +327,6 @@ function SourcePanel({ id, data: d, update }: { id: string; data: SourceData; up
         <input className={inputCls} placeholder="Mozilla/5.0 …" value={d.userAgent}
           onChange={e => update(id, { userAgent: e.target.value })} />
       </Field>
-
       <SectionTitle>Browser Options</SectionTitle>
       <Field label="Delay Between Requests (ms)" hint="Higher = more polite, less likely to be blocked">
         <input type="number" className={inputCls} value={d.delayMs} min={0} step={100}
@@ -405,7 +372,6 @@ function MovieListPanel({ id, data: d, update }: { id: string; data: MovieListDa
         <input className={inputCls} placeholder="a.next, .pagination .next a" value={d.nextPageSelector}
           onChange={e => update(id, { nextPageSelector: e.target.value })} />
       </Field>
-
       <SectionTitle>Limits</SectionTitle>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Max Pages" hint="Pages per category">
@@ -423,42 +389,29 @@ function MovieListPanel({ id, data: d, update }: { id: string; data: MovieListDa
 
 function DetailPanel({ id, data: d, update }: { id: string; data: DetailData; update: (id: string, patch: Partial<DetailData>) => void }) {
   const fields = d.fields ?? DEFAULT_DETAIL_FIELDS
-
-  const updateField = (fieldId: string, patch: Partial<DetailField>) => {
+  const updateField = (fieldId: string, patch: Partial<DetailField>) =>
     update(id, { fields: fields.map(f => f.id === fieldId ? { ...f, ...patch } : f) })
-  }
-
-  const removeField = (fieldId: string) => {
+  const removeField = (fieldId: string) =>
     update(id, { fields: fields.filter(f => f.id !== fieldId) })
-  }
-
   const addField = () => {
     const newField: DetailField = { id: `custom-${Date.now()}`, label: 'Custom Field', selector: '' }
     update(id, { fields: [...fields, newField] })
   }
-
-  const resetToDefaults = () => {
+  const resetToDefaults = () =>
     update(id, { fields: DEFAULT_DETAIL_FIELDS.map(f => ({ ...f })) })
-  }
-
   const configuredCount = fields.filter(f => f.selector.trim()).length
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <SectionTitle>Extraction Fields</SectionTitle>
-        <span className={cn(
-          'text-[10px] font-bold px-2 py-0.5 rounded-full',
-          configuredCount > 0 ? 'bg-amber-600/20 text-amber-300' : 'bg-[#1a1d27] text-slate-500',
-        )}>
+        <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', configuredCount > 0 ? 'bg-amber-600/20 text-amber-300' : 'bg-[#1a1d27] text-slate-500')}>
           {configuredCount}/{fields.length} set
         </span>
       </div>
       <p className="text-[11px] text-slate-500 leading-relaxed -mt-2">
         Define a CSS selector for each field. Leave blank to use built-in auto-detection.
       </p>
-
-      {/* Fields */}
       <div className="space-y-2">
         {fields.map((field) => (
           <div key={field.id} className="group/row rounded-lg bg-[#1a1d27] border border-[#2e3350] hover:border-[#3d4470] p-2.5 space-y-1.5 transition-colors">
@@ -490,8 +443,6 @@ function DetailPanel({ id, data: d, update }: { id: string; data: DetailData; up
           </div>
         ))}
       </div>
-
-      {/* Actions */}
       <button
         onClick={addField}
         className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-amber-400 border border-dashed border-amber-600/30 hover:border-amber-500/60 hover:bg-amber-600/5 transition-colors"
@@ -514,14 +465,12 @@ function ExportPanel({ id, data: d, update }: { id: string; data: ExportData; up
     const dir = await window.electronAPI.selectFolder()
     if (dir) update(id, { outputDir: dir })
   }
-
   const formats = [
     { key: 'exportJson'  as const, label: 'JSON',          desc: 'Machine-readable .json file'  },
     { key: 'exportExcel' as const, label: 'Excel (.xlsx)',  desc: 'Spreadsheet with rich format' },
     { key: 'exportCsv'   as const, label: 'CSV',           desc: 'Plain text comma-separated'   },
   ]
   const activeFormats = formats.filter(f => d[f.key])
-
   return (
     <div className="space-y-4">
       <SectionTitle>Output</SectionTitle>
@@ -536,12 +485,9 @@ function ExportPanel({ id, data: d, update }: { id: string; data: ExportData; up
           <button
             className="nodrag nopan shrink-0 px-2 py-1.5 rounded-md bg-[#1a1d27] border border-[#2e3350] text-xs text-slate-400 hover:text-slate-200 hover:border-indigo-500 transition-colors"
             onClick={browse}
-          >
-            …
-          </button>
+          >…</button>
         </div>
       </Field>
-
       <SectionTitle>Export Formats</SectionTitle>
       <div className="space-y-2">
         {formats.map(({ key, label, desc }) => (
@@ -549,9 +495,7 @@ function ExportPanel({ id, data: d, update }: { id: string; data: ExportData; up
             key={key}
             className={cn(
               'flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer',
-              d[key]
-                ? 'bg-indigo-600/10 border-indigo-500/30'
-                : 'bg-[#1a1d27] border-[#2e3350] hover:border-[#3d4470]',
+              d[key] ? 'bg-indigo-600/10 border-indigo-500/30' : 'bg-[#1a1d27] border-[#2e3350] hover:border-[#3d4470]',
             )}
             onClick={() => update(id, { [key]: !d[key] })}
           >
@@ -563,7 +507,6 @@ function ExportPanel({ id, data: d, update }: { id: string; data: ExportData; up
           </div>
         ))}
       </div>
-
       {activeFormats.length === 0 && (
         <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-600/10 border border-amber-500/20 rounded-lg px-3 py-2">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -602,7 +545,6 @@ function NodePalette() {
           </div>
         ))}
       </div>
-
       <div className="mt-auto pt-3 border-t border-[#2e3350]">
         <div className="rounded-lg bg-indigo-600/10 border border-indigo-500/20 p-2.5">
           <div className="flex items-center gap-1.5 mb-1.5">
@@ -625,21 +567,29 @@ function NodePalette() {
 
 // ─── Canvas ────────────────────────────────────────────────────────────────────
 
-function FlowCanvas() {
-  const navigate = useNavigate()
-  const store    = useScrapingStore()
+interface FlowCanvasProps {
+  projectId:    string
+  projectName:  string
+  initialNodes: Node[]
+  initialEdges: Edge[]
+}
+
+function FlowCanvas({ projectId, projectName, initialNodes, initialEdges }: FlowCanvasProps) {
+  const navigate       = useNavigate()
+  const store          = useScrapingStore()
+  const { updateProject } = useProjectStore()
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(INITIAL_EDGES)
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
   const { screenToFlowPosition, updateNodeData, deleteElements } = useReactFlow()
 
   const [configNodeId, setConfigNodeId] = useState<string | null>(null)
   const [configTab,    setConfigTab]    = useState<'config' | 'preview'>('config')
+  const [saved,        setSaved]        = useState(false)
 
   const openPanel = useCallback((nodeId: string, tab: 'config' | 'preview' = 'config') => {
-    setConfigNodeId(nodeId)
-    setConfigTab(tab)
+    setConfigNodeId(nodeId); setConfigTab(tab)
   }, [])
 
   const onConnect: OnConnect = useCallback(
@@ -648,8 +598,7 @@ function FlowCanvas() {
   )
 
   const onDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
+    e.preventDefault(); e.dataTransfer.dropEffect = 'move'
   }, [])
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -675,6 +624,13 @@ function FlowCanvas() {
     toast.info('Flow reset to default pipeline')
   }, [setNodes, setEdges])
 
+  const handleSave = useCallback(() => {
+    updateProject(projectId, { nodes, edges })
+    setSaved(true)
+    toast.success('Project saved')
+    setTimeout(() => setSaved(false), 2000)
+  }, [projectId, nodes, edges, updateProject])
+
   const handleRun = useCallback(async () => {
     const config = flowToConfig(nodes)
     if (!config) {
@@ -687,11 +643,12 @@ function FlowCanvas() {
       toast.error('No export format selected', { description: 'Enable at least one format in the Export node.' })
       return
     }
+    updateProject(projectId, { nodes, edges })
     store.initJob(config)
     window.electronAPI.startScraping(config).catch(() => {})
     toast.success('Scraping started!', { description: config.baseUrl })
     navigate('/progress')
-  }, [nodes, store, navigate])
+  }, [nodes, edges, store, navigate, projectId, updateProject])
 
   const handleUpdateNodeData = useCallback((id: string, patch: Partial<object>) => {
     updateNodeData(id, patch)
@@ -702,7 +659,6 @@ function FlowCanvas() {
     toast.info('Node deleted')
   }, [deleteElements])
 
-  // Keyboard delete for selected nodes/edges
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return
@@ -723,11 +679,22 @@ function FlowCanvas() {
     <NodeDetailProvider value={openPanel}>
       <div className="flex flex-col h-screen bg-[#0f1117] overflow-hidden">
 
-        {/* ── Toolbar ── */}
+        {/* Toolbar */}
         <header className="flex items-center gap-3 px-5 py-3 border-b border-[#2e3350] bg-[#13151f] shrink-0">
+          <button
+            onClick={() => navigate('/projects')}
+            className="flex items-center gap-1.5 text-slate-500 hover:text-slate-200 transition-colors shrink-0"
+            title="Back to Projects"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+
+          <div className="w-px h-5 bg-[#2e3350] shrink-0" />
+
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-bold text-slate-100">Flow Builder</h1>
+            <h1 className="text-sm font-bold text-slate-100 truncate">{projectName}</h1>
           </div>
+
           <button
             onClick={handleReset}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 border border-[#2e3350] hover:border-[#3d4470] hover:text-slate-200 bg-[#1a1d27] transition-colors"
@@ -735,6 +702,20 @@ function FlowCanvas() {
             <RotateCcw className="w-3.5 h-3.5" />
             Reset
           </button>
+
+          <button
+            onClick={handleSave}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
+              saved
+                ? 'text-emerald-400 border-emerald-500/40 bg-emerald-950/30'
+                : 'text-slate-300 border-[#2e3350] hover:border-[#3d4470] hover:text-slate-100 bg-[#1a1d27]',
+            )}
+          >
+            <Save className="w-3.5 h-3.5" />
+            {saved ? 'Saved!' : 'Save'}
+          </button>
+
           <button
             onClick={handleRun}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-900/40"
@@ -744,7 +725,7 @@ function FlowCanvas() {
           </button>
         </header>
 
-        {/* ── Main ── */}
+        {/* Main */}
         <div className="flex flex-1 overflow-hidden">
           <NodePalette />
 
@@ -780,7 +761,6 @@ function FlowCanvas() {
               />
             </ReactFlow>
 
-            {/* Config Panel overlay */}
             <NodeConfigPanel
               nodeId={configNodeId}
               nodes={nodes}
@@ -798,10 +778,35 @@ function FlowCanvas() {
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
-export default function FlowBuilder() {
+export default function ProjectDetail() {
+  const { id }        = useParams<{ id: string }>()
+  const navigate      = useNavigate()
+  const getProject    = useProjectStore((s) => s.getProject)
+
+  const project = id ? getProject(id) : null
+
+  if (!project) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen text-slate-500 gap-3">
+        <p className="text-sm">Project not found.</p>
+        <button
+          onClick={() => navigate('/projects')}
+          className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+        >
+          Back to Projects
+        </button>
+      </div>
+    )
+  }
+
   return (
     <ReactFlowProvider>
-      <FlowCanvas />
+      <FlowCanvas
+        projectId={project.id}
+        projectName={project.name}
+        initialNodes={project.nodes}
+        initialEdges={project.edges}
+      />
     </ReactFlowProvider>
   )
 }

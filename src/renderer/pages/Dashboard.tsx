@@ -63,28 +63,28 @@ export default function Dashboard() {
       {/* CTA */}
       <div className="mb-8 p-6 rounded-xl bg-gradient-to-br from-indigo-600/20 to-purple-600/10 border border-indigo-500/30">
         <div className="mb-4">
-          <div className="text-lg font-bold text-slate-100 mb-1">Start a new scraping job</div>
-          <div className="text-sm text-slate-400">Choose how you want to configure your scraping run</div>
+          <div className="text-lg font-bold text-slate-100 mb-1">Start a new scraping project</div>
+          <div className="text-sm text-slate-400">Create a project and build your pipeline with the visual Flow Builder</div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <button
-            onClick={() => navigate('/new')}
+            onClick={() => navigate('/projects/new')}
             className="flex items-center gap-2.5 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition-colors text-sm"
           >
             <PlusCircle className="w-4 h-4 shrink-0" />
             <div className="text-left">
-              <div className="font-bold text-sm">Quick Form</div>
-              <div className="text-xs text-indigo-200 font-normal">Fill & launch instantly</div>
+              <div className="font-bold text-sm">New Project</div>
+              <div className="text-xs text-indigo-200 font-normal">Set up & open flow builder</div>
             </div>
           </button>
           <button
-            onClick={() => navigate('/flow')}
+            onClick={() => navigate('/projects')}
             className="flex items-center gap-2.5 px-4 py-3 bg-violet-600/30 hover:bg-violet-600/50 border border-violet-500/40 hover:border-violet-500/70 text-white font-semibold rounded-lg transition-all text-sm"
           >
             <Workflow className="w-4 h-4 shrink-0 text-violet-300" />
             <div className="text-left">
-              <div className="font-bold text-sm text-violet-200">Flow Builder</div>
-              <div className="text-xs text-violet-300/70 font-normal">Visual node pipeline</div>
+              <div className="font-bold text-sm text-violet-200">All Projects</div>
+              <div className="text-xs text-violet-300/70 font-normal">View & manage projects</div>
             </div>
           </button>
         </div>
@@ -93,12 +93,11 @@ export default function Dashboard() {
       {/* Quick actions */}
       <div className="grid grid-cols-3 gap-3 mb-8">
         {[
-          { icon: Zap,      label: 'Quick scrape last URL', desc: recentJobs[0]?.url ?? 'No recent jobs',
-            onClick: () => recentJobs[0] ? navigate('/new') : undefined,
-            disabled: !recentJobs[0], color: 'text-indigo-400' },
-          { icon: Workflow, label: 'Open Flow Builder', desc: 'Visual pipeline editor',
-            onClick: () => navigate('/flow'), disabled: false, color: 'text-violet-400' },
-          { icon: Clock,    label: 'View history', desc: `${totalJobs} past jobs`,
+          { icon: Zap,      label: 'New Project',        desc: 'Create and open flow builder',
+            onClick: () => navigate('/projects/new'), disabled: false, color: 'text-indigo-400' },
+          { icon: Workflow, label: 'Browse Projects',    desc: 'View all saved projects',
+            onClick: () => navigate('/projects'), disabled: false, color: 'text-violet-400' },
+          { icon: Clock,    label: 'View history',       desc: `${totalJobs} past jobs`,
             onClick: () => navigate('/history'), disabled: false, color: 'text-blue-400' },
         ].map(({ icon: Icon, label, desc, onClick, disabled, color }) => (
           <button
@@ -151,7 +150,7 @@ export default function Dashboard() {
         <div className="text-center py-16 text-slate-500">
           <Film className="w-12 h-12 mx-auto mb-4 opacity-30" />
           <div className="text-base font-medium mb-1">No scraping history yet</div>
-          <div className="text-sm">Click "New Scraping" to get started</div>
+          <div className="text-sm">Click "Projects" to create your first project</div>
         </div>
       )}
     </div>

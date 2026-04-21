@@ -2,7 +2,7 @@ import React, { useState, useCallback, useContext, createContext } from 'react'
 import {
   Handle, Position, useReactFlow,
   BaseEdge, EdgeLabelRenderer, getBezierPath,
-  type NodeProps, type EdgeProps,
+  type NodeProps, type EdgeProps, type Node, type Edge,
 } from '@xyflow/react'
 import {
   Globe2, Layers, List, FileSearch, Download,
@@ -649,6 +649,23 @@ export const PALETTE_NODES = [
   { type: 'detail',    label: 'Detail Extractor', icon: FileSearch, color: 'bg-amber-600',   desc: 'Per-field CSS selectors'  },
   { type: 'export',    label: 'Export',           icon: Download,   color: 'bg-slate-600',   desc: 'Output folder & formats'  },
 ] as const
+
+// ─── Default pipeline ──────────────────────────────────────────────────────────
+
+export const INITIAL_NODES: Node[] = [
+  { id: 'source-1',    type: 'source',    position: { x: 40,   y: 120 }, data: { ...defaultNodeData.source }    },
+  { id: 'category-1',  type: 'category',  position: { x: 400,  y: 60  }, data: { ...defaultNodeData.category }  },
+  { id: 'movieList-1', type: 'movieList', position: { x: 760,  y: 20  }, data: { ...defaultNodeData.movieList } },
+  { id: 'detail-1',    type: 'detail',    position: { x: 1120, y: 0   }, data: { fields: DEFAULT_DETAIL_FIELDS.map(f => ({ ...f })) } },
+  { id: 'export-1',    type: 'export',    position: { x: 1480, y: 80  }, data: { ...defaultNodeData.export }    },
+]
+
+export const INITIAL_EDGES: Edge[] = [
+  { id: 'e-src-cat',  source: 'source-1',    target: 'category-1',  type: 'custom', animated: true },
+  { id: 'e-cat-list', source: 'category-1',  target: 'movieList-1', type: 'custom', animated: true },
+  { id: 'e-list-det', source: 'movieList-1', target: 'detail-1',    type: 'custom', animated: true },
+  { id: 'e-det-exp',  source: 'detail-1',    target: 'export-1',    type: 'custom', animated: true },
+]
 
 // ─── Sample Data Generator ─────────────────────────────────────────────────────
 
