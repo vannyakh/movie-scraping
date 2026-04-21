@@ -38,6 +38,22 @@ function createWindow(): void {
   } else {
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
   }
+
+  if (VITE_DEV_SERVER_URL) {
+    win.webContents.on('before-input-event', (_e, input) => {
+      const meta = input.meta || input.control
+      if (meta && input.key === 'r') {
+        win?.webContents.reload()
+      }
+      if (meta && input.shift && input.key === 'i') {
+        if (win?.webContents.isDevToolsOpened()) {
+          win.webContents.closeDevTools()
+        } else {
+          win?.webContents.openDevTools()
+        }
+      }
+    })
+  }
 }
 
 // ─── IPC ──────────────────────────────────────────────────────────────────────

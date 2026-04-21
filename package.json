@@ -6,7 +6,9 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:watch": "electron-vite dev --watch",
     "build": "electron-vite build && electron-builder",
+    "build:watch": "electron-vite build --watch",
     "preview": "electron-vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
@@ -27,6 +29,8 @@
     "playwright": "^1.59.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-draggable": "^4.5.0",
+    "react-resizable-panels": "^4.10.0",
     "react-router-dom": "^7.14.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",

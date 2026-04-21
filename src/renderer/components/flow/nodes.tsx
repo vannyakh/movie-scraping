@@ -7,14 +7,14 @@ import {
 import {
   Globe2, Layers, List, FileSearch, Download,
   Trash2, Copy, ChevronDown, ChevronUp, Settings2,
-  Plus, X, GripVertical, AlertCircle,
+  Plus, X, GripVertical, AlertCircle, Eye,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── Node Detail Context ───────────────────────────────────────────────────────
 // Lets nodes call "open config panel" without prop-drilling through ReactFlow
 
-type OpenDetailFn = (nodeId: string) => void
+type OpenDetailFn = (nodeId: string, tab?: 'config' | 'preview') => void
 
 const NodeDetailContext = createContext<OpenDetailFn | null>(null)
 
@@ -118,7 +118,12 @@ export function NodeWrapper({
 
   const handleConfigure = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    openDetail?.(id)
+    openDetail?.(id, 'config')
+  }, [openDetail, id])
+
+  const handlePreview = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    openDetail?.(id, 'preview')
   }, [openDetail, id])
 
   const hex = ACCENT_HEX[accent]
@@ -140,7 +145,14 @@ export function NodeWrapper({
           className="nodrag nopan flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-indigo-300 bg-[#1a1d27] border border-indigo-500/40 hover:border-indigo-400 hover:bg-indigo-950/40 transition-colors whitespace-nowrap"
         >
           <Settings2 className="w-3 h-3" />
-          Setup Logic
+          Setup
+        </button>
+        <button
+          onClick={handlePreview}
+          className="nodrag nopan flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-emerald-300 bg-[#1a1d27] border border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-950/40 transition-colors whitespace-nowrap"
+        >
+          <Eye className="w-3 h-3" />
+          Preview
         </button>
         <button
           onClick={handleDuplicate}
@@ -637,3 +649,72 @@ export const PALETTE_NODES = [
   { type: 'detail',    label: 'Detail Extractor', icon: FileSearch, color: 'bg-amber-600',   desc: 'Per-field CSS selectors'  },
   { type: 'export',    label: 'Export',           icon: Download,   color: 'bg-slate-600',   desc: 'Output folder & formats'  },
 ] as const
+
+// ─── Sample Data Generator ─────────────────────────────────────────────────────
+
+export function getSampleData(nodeType: string, nodeData: unknown): unknown {
+  switch (nodeType) {
+    case 'source': {
+      const d = nodeData as SourceData
+      return {
+        _node: 'source',
+        baseUrl:   d.baseUrl   || 'https://example-movies.com',
+        headless:  d.headless,
+        delayMs:   d.delayMs,
+        userAgent: d.userAgent || 'Mozilla/5.0 (Chrome/120.0.0.0 Safari/537.36)',
+      }
+    }
+    case 'category': {
+      return [
+        { name: 'Action', url: 'https://example-movies.com/genre/action', movieCount: 42 },
+        { name: 'Drama',  url: 'https://example-movies.com/genre/drama',  movieCount: 38 },
+        { name: 'Comedy', url: 'https://example-movies.com/genre/comedy', movieCount: 25 },
+        { name: 'Sci-Fi', url: 'https://example-movies.com/genre/sci-fi', movieCount: 31 },
+      ]
+    }
+    case 'movieList': {
+      return [
+        { title: 'Inception',       url: 'https://example-movies.com/movies/inception',    poster: 'https://example-movies.com/posters/inception.jpg'    },
+        { title: 'The Dark Knight', url: 'https://example-movies.com/movies/dark-knight',  poster: 'https://example-movies.com/posters/dark-knight.jpg'  },
+        { title: 'Interstellar',    url: 'https://example-movies.com/movies/interstellar', poster: 'https://example-movies.com/posters/interstellar.jpg' },
+        { title: 'The Matrix',      url: 'https://example-movies.com/movies/matrix',       poster: 'https://example-movies.com/posters/matrix.jpg'       },
+      ]
+    }
+    case 'detail': {
+      const d    = nodeData as DetailData
+      const fields = d.fields ?? DEFAULT_DETAIL_FIELDS
+      const SAMPLES: Record<string, unknown> = {
+        title:       'Inception',
+        year:        '2010',
+        rating:      '8.8 / 10',
+        duration:    '2h 28m',
+        director:    'Christopher Nolan',
+        description: 'A thief who steals corporate secrets through dream-sharing technology is given the inverse task of planting an idea.',
+        cast:        ['Leonardo DiCaprio', 'Joseph Gordon-Levitt', 'Elliot Page', 'Tom Hardy'],
+        poster:      'https://example-movies.com/posters/inception.jpg',
+      }
+      const result: Record<string, unknown> = {}
+      for (const field of fields) {
+        result[field.id] = SAMPLES[field.id] ?? `<${field.label.toLowerCase()} value>`
+      }
+      return result
+    }
+    case 'export': {
+      const d = nodeData as ExportData
+      const formats = [
+        d.exportJson  && 'json',
+        d.exportExcel && 'xlsx',
+        d.exportCsv   && 'csv',
+      ].filter(Boolean)
+      return {
+        outputDir:    d.outputDir || '/Users/you/Movies/output',
+        files:        formats.map(ext => `movies_${new Date().toISOString().slice(0,10)}.${ext}`),
+        totalMovies:  150,
+        categories:   4,
+        exportedAt:   new Date().toISOString().slice(0, 10),
+      }
+    }
+    default:
+      return {}
+  }
+}
