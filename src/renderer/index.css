@@ -1,66 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --color-base:        #0f1117;
+  --color-surface:     #1a1d27;
+  --color-card:        #21253a;
+  --color-app-border:  #2e3350;
+  --color-accent:      #6366f1;
+  --color-accent-dim:  #4f52c5;
+  --color-accent-lite: #818cf8;
+  --color-success:     #22c55e;
+  --color-warning:     #f59e0b;
+  --color-danger:      #ef4444;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  14px;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-:root {
-  --bg-base:    #0f1117;
-  --bg-surface: #1a1d27;
-  --bg-card:    #21253a;
-  --border:     #2e3350;
-  --accent:     #6366f1;
-  --accent-dim: #4f52c5;
-  --success:    #22c55e;
-  --warning:    #f59e0b;
-  --danger:     #ef4444;
-  --text-1:     #f1f5f9;
-  --text-2:     #94a3b8;
-  --text-3:     #64748b;
-  --radius:     10px;
-  --shadow:     0 4px 24px rgba(0,0,0,.45);
-
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+html {
+  background-color: #0f1117;
+  color: #f1f5f9;
+  font-family: var(--font-sans);
   font-size: 14px;
-  color: var(--text-1);
-  background: var(--bg-base);
   -webkit-font-smoothing: antialiased;
 }
 
 body { min-height: 100vh; }
 
-button {
-  font-family: inherit;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  border-radius: var(--radius);
-  transition: opacity .15s, transform .1s;
-}
-button:active { transform: scale(.97); }
-button:disabled { opacity: .4; cursor: not-allowed; }
+/* Custom scrollbar */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: #2e3350; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #3d4468; }
 
-input, select {
-  font-family: inherit;
-  font-size: 0.875rem;
-  background: var(--bg-base);
-  color: var(--text-1);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  outline: none;
-  transition: border-color .2s;
-  width: 100%;
-}
-input:focus, select:focus { border-color: var(--accent); }
+/* Drag region for frameless window */
+.drag-region { -webkit-app-region: drag; }
+.no-drag     { -webkit-app-region: no-drag; }
 
-label {
-  display: block;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-2);
-  margin-bottom: 0.35rem;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+/* Sonner toast overrides */
+[data-sonner-toaster] { font-family: var(--font-sans) !important; }

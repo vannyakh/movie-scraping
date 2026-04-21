@@ -1,64 +1,38 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-// ─── Shared types (mirrored in src/lib/ipc.ts for the renderer) ──────────────
+const api = {
+  startScraping:  (config: unknown) => ipcRenderer.invoke('scrape:start', config),
+  stopScraping:   ()                 => ipcRenderer.invoke('scrape:stop'),
+  pauseScraping:  ()                 => ipcRenderer.invoke('scrape:pause'),
+  resumeScraping: ()                 => ipcRenderer.invoke('scrape:resume'),
+  openPath:       (p: string)        => ipcRenderer.invoke('open:path', p),
+  selectFolder:   ()                 => ipcRenderer.invoke('dialog:selectFolder'),
 
-export interface ScraperConfig {
-  baseUrl: string
-  outputDir: string
-  headless: boolean
-  maxMoviesPerCategory?: number
-}
-
-export interface ScraperProgress {
-  step: 1 | 2 | 3
-  label: string
-  current: number
-  total: number
-  message: string
-}
-
-export interface ScraperResult {
-  jsonPath: string
-  excelPath: string
-  totalMovies: number
-}
-
-// ─── Exposed API ──────────────────────────────────────────────────────────────
-
-const electronAPI = {
-  startScraping: (config: ScraperConfig) =>
-    ipcRenderer.invoke('scrape:start', config) as Promise<
-      { success: true } & ScraperResult | { success: false; error: string }
-    >,
-
-  stopScraping: (): Promise<void> => ipcRenderer.invoke('scrape:stop'),
-
-  openPath: (filePath: string): Promise<void> =>
-    ipcRenderer.invoke('open:path', filePath),
-
-  onProgress: (cb: (progress: ScraperProgress) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, p: ScraperProgress) => cb(p)
-    ipcRenderer.on('scrape:progress', handler)
-    return () => ipcRenderer.off('scrape:progress', handler)
+  onProgress:   (cb: (...a: unknown[]) => void) => {
+    const h = (_: unknown, v: unknown) => cb(v)
+    ipcRenderer.on('scrape:progress',   h)
+    return () => ipcRenderer.off('scrape:progress',   h)
   },
-
-  onLog: (cb: (message: string) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, msg: string) => cb(msg)
-    ipcRenderer.on('scrape:log', handler)
-    return () => ipcRenderer.off('scrape:log', handler)
+  onLog:        (cb: (...a: unknown[]) => void) => {
+    const h = (_: unknown, v: unknown) => cb(v)
+    ipcRenderer.on('scrape:log',        h)
+    return () => ipcRenderer.off('scrape:log',        h)
   },
-
-  onComplete: (cb: (result: ScraperResult) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, r: ScraperResult) => cb(r)
-    ipcRenderer.on('scrape:complete', handler)
-    return () => ipcRenderer.off('scrape:complete', handler)
+  onComplete:   (cb: (...a: unknown[]) => void) => {
+    const h = (_: unknown, v: unknown) => cb(v)
+    ipcRenderer.on('scrape:complete',   h)
+    return () => ipcRenderer.off('scrape:complete',   h)
   },
-
-  onError: (cb: (error: string) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, err: string) => cb(err)
-    ipcRenderer.on('scrape:error', handler)
-    return () => ipcRenderer.off('scrape:error', handler)
+  onError:      (cb: (...a: unknown[]) => void) => {
+    const h = (_: unknown, v: unknown) => cb(v)
+    ipcRenderer.on('scrape:error',      h)
+    return () => ipcRenderer.off('scrape:error',      h)
+  },
+  onMovieBatch: (cb: (...a: unknown[]) => void) => {
+    const h = (_: unknown, v: unknown) => cb(v)
+    ipcRenderer.on('scrape:movieBatch', h)
+    return () => ipcRenderer.off('scrape:movieBatch', h)
   },
 }
 
-contextBridge.exposeInMainWorld('electronAPI', electronAPI)
+contextBridge.exposeInMainWorld('electronAPI', api)

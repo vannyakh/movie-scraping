@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { runScraper } from './scraper'
+import { runScraper, ScrapeController } from './scraper'
 import type { ScraperConfig } from './scraper'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -9,27 +9,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 process.env.APP_ROOT = path.join(__dirname, '../..')
 
 export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
-export const MAIN_DIST = path.join(process.env.APP_ROOT, 'out/main')
-export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'out/renderer')
+export const RENDERER_DIST       = path.join(process.env.APP_ROOT, 'out/renderer')
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   ? path.join(process.env.APP_ROOT, 'public')
   : RENDERER_DIST
 
-let win: BrowserWindow | null = null
-let abortController: AbortController | null = null
+let win:        BrowserWindow | null  = null
+let controller: ScrapeController | null = null
 
 function createWindow(): void {
   win = new BrowserWindow({
-    width: 1100,
-    height: 740,
-    minWidth: 820,
-    minHeight: 600,
+    width:     1200,
+    height:    760,
+    minWidth:  900,
+    minHeight: 620,
     backgroundColor: '#0f1117',
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.mjs'),
+      preload:          path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
-      nodeIntegration: false,
+      nodeIntegration:  false,
     },
   })
 
@@ -41,16 +40,19 @@ function createWindow(): void {
   }
 }
 
+// ─── IPC ──────────────────────────────────────────────────────────────────────
+
 ipcMain.handle('scrape:start', async (_event, config: ScraperConfig) => {
-  abortController?.abort()
-  abortController = new AbortController()
+  controller?.abort()
+  controller = new ScrapeController()
 
   try {
     const result = await runScraper(
       config,
-      (progress) => win?.webContents.send('scrape:progress', progress),
-      (log) => win?.webContents.send('scrape:log', log),
-      abortController.signal,
+      (progress) => win?.webContents.send('scrape:progress',   progress),
+      (log)      => win?.webContents.send('scrape:log',        log),
+      (movies)   => win?.webContents.send('scrape:movieBatch', movies),
+      controller,
     )
     win?.webContents.send('scrape:complete', result)
     return { success: true, ...result }
@@ -59,24 +61,30 @@ ipcMain.handle('scrape:start', async (_event, config: ScraperConfig) => {
     win?.webContents.send('scrape:error', message)
     return { success: false, error: message }
   } finally {
-    abortController = null
+    controller = null
   }
 })
 
-ipcMain.handle('scrape:stop', () => {
-  abortController?.abort()
-  abortController = null
-})
+ipcMain.handle('scrape:stop',   () => { controller?.abort();  controller = null })
+ipcMain.handle('scrape:pause',  () => { controller?.pause()  })
+ipcMain.handle('scrape:resume', () => { controller?.resume() })
 
 ipcMain.handle('open:path', (_event, filePath: string) => {
   shell.showItemInFolder(filePath)
 })
 
+ipcMain.handle('dialog:selectFolder', async () => {
+  if (!win) return null
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    properties: ['openDirectory'],
+  })
+  return canceled ? null : filePaths[0]
+})
+
+// ─── App lifecycle ────────────────────────────────────────────────────────────
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-    win = null
-  }
+  if (process.platform !== 'darwin') { app.quit(); win = null }
 })
 
 app.on('activate', () => {

@@ -1,249 +1,142 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { ipc } from '../../lib/ipc'
-import type { ScraperConfig, ScraperProgress, ScraperResult } from '../../lib/ipc'
-import Step1_Categories from '../components/Step1_Categories'
-import Step2_List from '../components/Step2_List'
-import Step3_Detail from '../components/Step3_Detail'
-import ProgressBar from '../components/ProgressBar'
-import styles from './Dashboard.module.css'
-
-type Status = 'idle' | 'running' | 'done' | 'error' | 'stopped'
-
-const DEFAULT_CONFIG: ScraperConfig = {
-  baseUrl: 'https://example-movie-site.com',
-  outputDir: '',
-  headless: true,
-  maxMoviesPerCategory: 50,
-}
+import { useNavigate } from 'react-router-dom'
+import { Film, PlusCircle, CheckCircle, AlertCircle, Clock, TrendingUp, Zap } from 'lucide-react'
+import { useScrapingStore } from '@/store/scrapingStore'
+import { formatDate } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 export default function Dashboard() {
-  const [config, setConfig] = useState<ScraperConfig>(DEFAULT_CONFIG)
-  const [status, setStatus] = useState<Status>('idle')
-  const [progress, setProgress] = useState<ScraperProgress | null>(null)
-  const [logs, setLogs] = useState<string[]>([])
-  const [result, setResult] = useState<ScraperResult | null>(null)
-  const [errorMsg, setErrorMsg] = useState<string>('')
-  const logEndRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
+  const { history, activeJob } = useScrapingStore()
 
-  const appendLog = useCallback((msg: string) => {
-    setLogs((prev) => [...prev.slice(-499), msg])
-  }, [])
+  const totalMovies  = history.reduce((s, h) => s + h.totalMovies, 0)
+  const totalJobs    = history.length
+  const successRate  = totalJobs === 0 ? 100 : Math.round((history.filter(h => h.status === 'done').length / totalJobs) * 100)
+  const recentJobs   = history.slice(0, 5)
 
-  useEffect(() => {
-    const offs = [
-      ipc.onProgress((p) => setProgress(p)),
-      ipc.onLog((msg) => appendLog(msg)),
-      ipc.onComplete((r) => {
-        setResult(r)
-        setStatus('done')
-      }),
-      ipc.onError((err) => {
-        setErrorMsg(err)
-        setStatus('error')
-      }),
-    ]
-    return () => offs.forEach((off) => off())
-  }, [appendLog])
-
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [logs])
-
-  const handleStart = async () => {
-    setLogs([])
-    setProgress(null)
-    setResult(null)
-    setErrorMsg('')
-    setStatus('running')
-    await ipc.startScraping(config)
+  const STATUS_COLOR: Record<string, string> = {
+    done:    'text-green-400 bg-green-400/10',
+    error:   'text-red-400 bg-red-400/10',
+    stopped: 'text-yellow-400 bg-yellow-400/10',
   }
-
-  const handleStop = async () => {
-    await ipc.stopScraping()
-    setStatus('stopped')
-  }
-
-  const overallPct =
-    progress == null
-      ? 0
-      : progress.step === 1
-        ? 10
-        : progress.step === 2
-          ? 10 + (progress.current / Math.max(progress.total, 1)) * 35
-          : 45 + (progress.current / Math.max(progress.total, 1)) * 55
 
   return (
-    <div className={styles.root}>
-      {/* ── Header ── */}
-      <header className={styles.header}>
-        <div className={styles.headerInner}>
-          <div className={styles.logo}>
-            <span className={styles.logoIcon}>🎬</span>
-            <span className={styles.logoText}>MovieScraping</span>
-          </div>
-          {status === 'running' && (
-            <span className={styles.badge} data-running>● Running</span>
-          )}
-          {status === 'done' && (
-            <span className={styles.badge} data-done>✓ Complete</span>
-          )}
-          {status === 'error' && (
-            <span className={styles.badge} data-error>✕ Error</span>
-          )}
-          {status === 'stopped' && (
-            <span className={styles.badge} data-stopped>■ Stopped</span>
-          )}
-        </div>
-      </header>
+    <div className="p-8 max-w-5xl mx-auto">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-slate-100">Dashboard</h1>
+        <p className="text-slate-400 text-sm mt-1">Overview of your scraping activity</p>
+      </div>
 
-      <main className={styles.main}>
-        {/* ── Config panel ── */}
-        <section className={styles.card}>
-          <h2 className={styles.sectionTitle}>Configuration</h2>
-          <div className={styles.formGrid}>
-            <div className={styles.formField}>
-              <label htmlFor="baseUrl">Target URL</label>
-              <input
-                id="baseUrl"
-                type="url"
-                value={config.baseUrl}
-                onChange={(e) => setConfig((c) => ({ ...c, baseUrl: e.target.value }))}
-                disabled={status === 'running'}
-                placeholder="https://movie-site.com"
-              />
+      {/* Active job banner */}
+      {activeJob && activeJob.status === 'running' && (
+        <div
+          className="mb-6 p-4 rounded-xl bg-indigo-600/10 border border-indigo-500/30 flex items-center gap-4 cursor-pointer hover:bg-indigo-600/15 transition-colors"
+          onClick={() => navigate('/progress')}
+        >
+          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-indigo-300">Scraping in progress</div>
+            <div className="text-xs text-slate-400 mt-0.5">{activeJob.config.baseUrl}</div>
+          </div>
+          <div className="text-xs text-slate-400">{activeJob.movies.length} movies found</div>
+          <div className="text-xs text-indigo-400 font-medium">View →</div>
+        </div>
+      )}
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-3 gap-4 mb-8">
+        {[
+          { icon: Film,      label: 'Total Movies Scraped', value: totalMovies.toLocaleString(), color: 'text-indigo-400' },
+          { icon: CheckCircle, label: 'Jobs Completed',     value: totalJobs.toString(),         color: 'text-green-400'  },
+          { icon: TrendingUp,  label: 'Success Rate',       value: `${successRate}%`,             color: 'text-blue-400'   },
+        ].map(({ icon: Icon, label, value, color }) => (
+          <div key={label} className="bg-[#1a1d27] border border-[#2e3350] rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">{label}</span>
+              <Icon className={cn('w-4 h-4', color)} />
             </div>
-            <div className={styles.formField}>
-              <label htmlFor="outputDir">Output Folder</label>
-              <input
-                id="outputDir"
-                type="text"
-                value={config.outputDir}
-                onChange={(e) => setConfig((c) => ({ ...c, outputDir: e.target.value }))}
-                disabled={status === 'running'}
-                placeholder="C:\Users\You\Desktop\output"
-              />
+            <div className={cn('text-3xl font-bold', color)}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* CTA */}
+      <div className="mb-8 p-6 rounded-xl bg-gradient-to-br from-indigo-600/20 to-purple-600/10 border border-indigo-500/30 flex items-center justify-between">
+        <div>
+          <div className="text-lg font-bold text-slate-100 mb-1">Start a new scraping job</div>
+          <div className="text-sm text-slate-400">Configure URL, selectors, export format and launch</div>
+        </div>
+        <button
+          onClick={() => navigate('/new')}
+          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition-colors text-sm"
+        >
+          <PlusCircle className="w-4 h-4" />
+          New Scraping
+        </button>
+      </div>
+
+      {/* Quick actions */}
+      <div className="grid grid-cols-2 gap-3 mb-8">
+        {[
+          { icon: Zap,   label: 'Quick scrape last URL', desc: recentJobs[0]?.url ?? 'No recent jobs',
+            onClick: () => recentJobs[0] ? navigate('/new') : undefined,
+            disabled: !recentJobs[0] },
+          { icon: Clock, label: 'View history', desc: `${totalJobs} past jobs`,
+            onClick: () => navigate('/history'), disabled: false },
+        ].map(({ icon: Icon, label, desc, onClick, disabled }) => (
+          <button
+            key={label}
+            onClick={onClick}
+            disabled={disabled}
+            className="flex items-center gap-4 p-4 bg-[#1a1d27] border border-[#2e3350] rounded-xl text-left hover:border-indigo-500/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <div className="w-10 h-10 rounded-lg bg-[#21253a] flex items-center justify-center shrink-0">
+              <Icon className="w-5 h-5 text-indigo-400" />
             </div>
-            <div className={styles.formField}>
-              <label htmlFor="maxMovies">Max Movies / Category</label>
-              <input
-                id="maxMovies"
-                type="number"
-                min={1}
-                value={config.maxMoviesPerCategory ?? ''}
-                onChange={(e) =>
-                  setConfig((c) => ({
-                    ...c,
-                    maxMoviesPerCategory: e.target.value ? Number(e.target.value) : undefined,
-                  }))
-                }
-                disabled={status === 'running'}
-                placeholder="Unlimited"
-              />
+            <div>
+              <div className="text-sm font-semibold text-slate-200">{label}</div>
+              <div className="text-xs text-slate-500 mt-0.5 truncate max-w-[200px]">{desc}</div>
             </div>
-            <div className={styles.formField}>
-              <label>Browser Mode</label>
-              <div className={styles.toggleRow}>
-                <button
-                  className={styles.toggleBtn}
-                  data-active={config.headless}
-                  onClick={() => setConfig((c) => ({ ...c, headless: true }))}
-                  disabled={status === 'running'}
-                >
-                  Headless
-                </button>
-                <button
-                  className={styles.toggleBtn}
-                  data-active={!config.headless}
-                  onClick={() => setConfig((c) => ({ ...c, headless: false }))}
-                  disabled={status === 'running'}
-                >
-                  Visible
-                </button>
+          </button>
+        ))}
+      </div>
+
+      {/* Recent history */}
+      {recentJobs.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Recent Jobs</h2>
+            <button onClick={() => navigate('/history')} className="text-xs text-indigo-400 hover:text-indigo-300">View all →</button>
+          </div>
+          <div className="flex flex-col gap-2">
+            {recentJobs.map((job) => (
+              <div
+                key={job.id}
+                className="flex items-center gap-4 p-3.5 bg-[#1a1d27] border border-[#2e3350] rounded-lg hover:border-[#3d4468] transition-colors cursor-pointer"
+                onClick={() => navigate('/history')}
+              >
+                <div className={cn('text-xs font-semibold px-2 py-0.5 rounded-full', STATUS_COLOR[job.status] ?? '')}>
+                  {job.status === 'done' ? '✓' : job.status === 'error' ? '✕' : '■'} {job.status}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-slate-200 truncate">{job.url}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{formatDate(job.startedAt)}</div>
+                </div>
+                <div className="text-sm font-semibold text-slate-300">{job.totalMovies.toLocaleString()}</div>
+                <div className="text-xs text-slate-500">movies</div>
               </div>
-            </div>
+            ))}
           </div>
-
-          <div className={styles.actions}>
-            {status !== 'running' ? (
-              <button className={styles.btnPrimary} onClick={handleStart}>
-                ▶ Start Scraping
-              </button>
-            ) : (
-              <button className={styles.btnDanger} onClick={handleStop}>
-                ■ Stop
-              </button>
-            )}
-          </div>
-        </section>
-
-        {/* ── Overall progress bar ── */}
-        {(status === 'running' || status === 'done') && (
-          <ProgressBar value={Math.round(overallPct)} label="Overall progress" />
-        )}
-
-        {/* ── Step cards ── */}
-        <div className={styles.steps}>
-          <Step1_Categories
-            progress={progress}
-            active={status === 'running' && progress?.step === 1}
-            done={progress != null && progress.step > 1}
-          />
-          <Step2_List
-            progress={progress}
-            active={status === 'running' && progress?.step === 2}
-            done={progress != null && progress.step > 2}
-          />
-          <Step3_Detail
-            progress={progress}
-            active={status === 'running' && progress?.step === 3}
-            done={status === 'done'}
-          />
         </div>
+      )}
 
-        {/* ── Error banner ── */}
-        {status === 'error' && (
-          <div className={styles.errorBox}>
-            <strong>Error:</strong> {errorMsg}
-          </div>
-        )}
-
-        {/* ── Success screen ── */}
-        {status === 'done' && result && (
-          <section className={styles.card} data-success>
-            <h2 className={styles.sectionTitle}>✓ Scraping Complete</h2>
-            <p className={styles.statLine}>
-              <strong>{result.totalMovies}</strong> movies saved
-            </p>
-            <div className={styles.fileLinks}>
-              <button
-                className={styles.fileBtn}
-                onClick={() => ipc.openPath(result.jsonPath)}
-              >
-                📄 Open JSON
-              </button>
-              <button
-                className={styles.fileBtn}
-                onClick={() => ipc.openPath(result.excelPath)}
-              >
-                📊 Open Excel
-              </button>
-            </div>
-          </section>
-        )}
-
-        {/* ── Log console ── */}
-        {logs.length > 0 && (
-          <section className={styles.card}>
-            <h2 className={styles.sectionTitle}>Log</h2>
-            <div className={styles.logBox}>
-              {logs.map((line, i) => (
-                <div key={i} className={styles.logLine}>{line}</div>
-              ))}
-              <div ref={logEndRef} />
-            </div>
-          </section>
-        )}
-      </main>
+      {history.length === 0 && (
+        <div className="text-center py-16 text-slate-500">
+          <Film className="w-12 h-12 mx-auto mb-4 opacity-30" />
+          <div className="text-base font-medium mb-1">No scraping history yet</div>
+          <div className="text-sm">Click "New Scraping" to get started</div>
+        </div>
+      )}
     </div>
   )
 }
