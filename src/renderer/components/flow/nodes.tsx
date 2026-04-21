@@ -1,14 +1,37 @@
-import { Handle, Position, useReactFlow } from '@xyflow/react'
-import type { NodeProps } from '@xyflow/react'
-import { Globe2, Layers, List, FileSearch, Download } from 'lucide-react'
+import React, { useState, useCallback, useContext, createContext } from 'react'
+import {
+  Handle, Position, useReactFlow,
+  BaseEdge, EdgeLabelRenderer, getBezierPath,
+  type NodeProps, type EdgeProps,
+} from '@xyflow/react'
+import {
+  Globe2, Layers, List, FileSearch, Download,
+  Trash2, Copy, ChevronDown, ChevronUp, Settings2,
+  Plus, X, GripVertical, AlertCircle,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-// ─── Shared ───────────────────────────────────────────────────────────────────
+// ─── Node Detail Context ───────────────────────────────────────────────────────
+// Lets nodes call "open config panel" without prop-drilling through ReactFlow
 
-const inputCls =
+type OpenDetailFn = (nodeId: string) => void
+
+const NodeDetailContext = createContext<OpenDetailFn | null>(null)
+
+export const NodeDetailProvider = NodeDetailContext.Provider
+
+function useOpenDetail() {
+  return useContext(NodeDetailContext)
+}
+
+// ─── Shared ────────────────────────────────────────────────────────────────────
+
+export const inputCls =
   'nodrag nopan w-full bg-[#0f1117] border border-[#2e3350] rounded-md px-2 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors'
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+export function Field({
+  label, hint, children,
+}: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
       <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{label}</p>
@@ -18,7 +41,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
-function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+export function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
       className={cn(
@@ -27,12 +50,10 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
       )}
       onClick={() => onChange(!value)}
     >
-      <span
-        className={cn(
-          'pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform',
-          value ? 'translate-x-4' : 'translate-x-0',
-        )}
-      />
+      <span className={cn(
+        'pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform',
+        value ? 'translate-x-4' : 'translate-x-0',
+      )} />
     </button>
   )
 }
@@ -49,7 +70,128 @@ function handleStyle(color: string): React.CSSProperties {
   return { background: hex, border: `2px solid ${hex}`, width: 10, height: 10 }
 }
 
-// ─── Source Node ──────────────────────────────────────────────────────────────
+const ACCENT_HEX: Record<string, string> = {
+  indigo:  '#6366f1',
+  violet:  '#8b5cf6',
+  emerald: '#10b981',
+  amber:   '#f59e0b',
+  slate:   '#64748b',
+}
+
+// ─── NodeWrapper ───────────────────────────────────────────────────────────────
+
+interface NodeWrapperProps {
+  id: string
+  selected?: boolean
+  accent: keyof typeof ACCENT_HEX
+  accentClass: string
+  icon: React.ElementType
+  label: string
+  children: React.ReactNode
+  defaultCollapsed?: boolean
+}
+
+export function NodeWrapper({
+  id, selected, accent, accentClass, icon: Icon, label, children, defaultCollapsed = false,
+}: NodeWrapperProps) {
+  const { deleteElements, getNodes, addNodes } = useReactFlow()
+  const openDetail = useOpenDetail()
+  const [hovered, setHovered] = useState(false)
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
+
+  const handleDelete = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    deleteElements({ nodes: [{ id }] })
+  }, [deleteElements, id])
+
+  const handleDuplicate = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    const node = getNodes().find(n => n.id === id)
+    if (!node) return
+    addNodes({
+      ...node,
+      id: `${node.type}-${Date.now()}`,
+      position: { x: node.position.x + 40, y: node.position.y + 40 },
+      selected: false,
+    })
+  }, [getNodes, addNodes, id])
+
+  const handleConfigure = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    openDetail?.(id)
+  }, [openDetail, id])
+
+  const hex = ACCENT_HEX[accent]
+  const showActions = hovered || selected
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* ── Floating action toolbar ── */}
+      <div className={cn(
+        'absolute -top-9 right-0 flex items-center gap-1 z-50 transition-all duration-150',
+        showActions ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+      )}>
+        <button
+          onClick={handleConfigure}
+          className="nodrag nopan flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-indigo-300 bg-[#1a1d27] border border-indigo-500/40 hover:border-indigo-400 hover:bg-indigo-950/40 transition-colors whitespace-nowrap"
+        >
+          <Settings2 className="w-3 h-3" />
+          Setup Logic
+        </button>
+        <button
+          onClick={handleDuplicate}
+          title="Clone node"
+          className="nodrag nopan flex items-center justify-center w-6 h-6 rounded-md text-slate-400 bg-[#1a1d27] border border-[#2e3350] hover:border-slate-400 hover:text-slate-200 transition-colors"
+        >
+          <Copy className="w-3 h-3" />
+        </button>
+        <button
+          onClick={handleDelete}
+          title="Delete node"
+          className="nodrag nopan flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-red-400 bg-[#1a1d27] border border-[#2e3350] hover:border-red-500 hover:bg-red-950/40 transition-colors whitespace-nowrap"
+        >
+          <Trash2 className="w-3 h-3" />
+          Delete
+        </button>
+      </div>
+
+      {/* ── Node card ── */}
+      <div
+        className={cn(
+          'w-72 bg-[#13151f] rounded-xl shadow-xl overflow-hidden transition-all duration-150',
+          selected ? 'border-2' : hovered ? 'border border-[#3d4470]' : 'border border-[#2e3350]',
+        )}
+        style={selected ? { borderColor: hex, boxShadow: `0 6px 24px ${hex}40` } : undefined}
+      >
+        {/* Header */}
+        <div className={cn('flex items-center gap-2 px-3 py-2.5', accentClass)}>
+          <Icon className="w-3.5 h-3.5 text-white shrink-0" />
+          <span className="text-[11px] font-bold text-white tracking-widest uppercase flex-1">{label}</span>
+          <span className="text-[9px] text-white/50 font-mono">#{id.split('-').slice(-1)[0]}</span>
+          <button
+            className="nodrag nopan ml-1 text-white/60 hover:text-white transition-colors"
+            onClick={() => setCollapsed(c => !c)}
+            title={collapsed ? 'Expand' : 'Collapse'}
+          >
+            {collapsed
+              ? <ChevronDown className="w-3.5 h-3.5" />
+              : <ChevronUp className="w-3.5 h-3.5" />
+            }
+          </button>
+        </div>
+
+        {/* Body */}
+        {!collapsed && children}
+      </div>
+    </div>
+  )
+}
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
 
 export interface SourceData {
   baseUrl:   string
@@ -58,16 +200,42 @@ export interface SourceData {
   userAgent: string
 }
 
-export function SourceNode({ id, data }: NodeProps) {
+export interface CategoryData {
+  selector: string
+}
+
+export interface MovieListData {
+  movieSelector:    string
+  nextPageSelector: string
+  maxPages:         number
+  maxMovies:        number
+}
+
+export interface DetailField {
+  id:       string
+  label:    string
+  selector: string
+}
+
+export interface DetailData {
+  fields: DetailField[]
+}
+
+export interface ExportData {
+  outputDir:   string
+  exportJson:  boolean
+  exportExcel: boolean
+  exportCsv:   boolean
+}
+
+// ─── Source Node ───────────────────────────────────────────────────────────────
+
+export function SourceNode({ id, data, selected }: NodeProps) {
   const { updateNodeData } = useReactFlow()
   const d = data as unknown as SourceData
 
   return (
-    <div className="w-72 bg-[#13151f] border border-[#2e3350] rounded-xl shadow-2xl overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-indigo-600">
-        <Globe2 className="w-3.5 h-3.5 text-white shrink-0" />
-        <span className="text-[11px] font-bold text-white tracking-widest uppercase">Source</span>
-      </div>
+    <NodeWrapper id={id} selected={selected} accent="indigo" accentClass="bg-indigo-600" icon={Globe2} label="Source">
       <div className="p-3 space-y-2.5">
         <Field label="Base URL" hint="The site homepage to start from">
           <input
@@ -105,32 +273,21 @@ export function SourceNode({ id, data }: NodeProps) {
         </Field>
       </div>
       <Handle type="source" position={Position.Right} style={handleStyle('indigo')} />
-    </div>
+    </NodeWrapper>
   )
 }
 
-// ─── Category Node ────────────────────────────────────────────────────────────
+// ─── Category Node ─────────────────────────────────────────────────────────────
 
-export interface CategoryData {
-  selector: string
-}
-
-export function CategoryNode({ id, data }: NodeProps) {
+export function CategoryNode({ id, data, selected }: NodeProps) {
   const { updateNodeData } = useReactFlow()
   const d = data as unknown as CategoryData
 
   return (
-    <div className="w-72 bg-[#13151f] border border-[#2e3350] rounded-xl shadow-2xl overflow-hidden">
+    <NodeWrapper id={id} selected={selected} accent="violet" accentClass="bg-violet-600" icon={Layers} label="Categories">
       <Handle type="target" position={Position.Left} style={handleStyle('violet')} />
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-violet-600">
-        <Layers className="w-3.5 h-3.5 text-white shrink-0" />
-        <span className="text-[11px] font-bold text-white tracking-widest uppercase">Categories</span>
-      </div>
       <div className="p-3 space-y-2.5">
-        <Field
-          label="Category Link Selector"
-          hint="CSS selector for nav/menu links. Leave blank to auto-detect."
-        >
+        <Field label="Category Link Selector" hint="Leave blank to auto-detect nav patterns">
           <input
             className={inputCls}
             placeholder="nav a[href], .genre-menu a"
@@ -140,35 +297,24 @@ export function CategoryNode({ id, data }: NodeProps) {
         </Field>
         <div className="rounded-lg bg-violet-600/10 border border-violet-500/20 px-3 py-2">
           <p className="text-[10px] text-violet-300 leading-relaxed">
-            Scrapes category / genre links from the homepage. Auto-detection finds common nav patterns when left blank.
+            Scrapes category links from the homepage. Auto-detection finds common nav patterns when left blank.
           </p>
         </div>
       </div>
       <Handle type="source" position={Position.Right} style={handleStyle('violet')} />
-    </div>
+    </NodeWrapper>
   )
 }
 
-// ─── Movie List Node ──────────────────────────────────────────────────────────
+// ─── Movie List Node ───────────────────────────────────────────────────────────
 
-export interface MovieListData {
-  movieSelector:    string
-  nextPageSelector: string
-  maxPages:         number
-  maxMovies:        number
-}
-
-export function MovieListNode({ id, data }: NodeProps) {
+export function MovieListNode({ id, data, selected }: NodeProps) {
   const { updateNodeData } = useReactFlow()
   const d = data as unknown as MovieListData
 
   return (
-    <div className="w-72 bg-[#13151f] border border-[#2e3350] rounded-xl shadow-2xl overflow-hidden">
+    <NodeWrapper id={id} selected={selected} accent="emerald" accentClass="bg-emerald-600" icon={List} label="Movie List">
       <Handle type="target" position={Position.Left} style={handleStyle('emerald')} />
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-emerald-600">
-        <List className="w-3.5 h-3.5 text-white shrink-0" />
-        <span className="text-[11px] font-bold text-white tracking-widest uppercase">Movie List</span>
-      </div>
       <div className="p-3 space-y-2.5">
         <Field label="Movie Item Selector" hint="CSS selector for each movie card/link">
           <input
@@ -178,7 +324,7 @@ export function MovieListNode({ id, data }: NodeProps) {
             onChange={e => updateNodeData(id, { movieSelector: e.target.value })}
           />
         </Field>
-        <Field label="Next Page Selector" hint="CSS selector for the pagination next button">
+        <Field label="Next Page Selector" hint="CSS selector for pagination next button">
           <input
             className={inputCls}
             placeholder="a.next, .pagination .next a"
@@ -208,75 +354,117 @@ export function MovieListNode({ id, data }: NodeProps) {
         </div>
       </div>
       <Handle type="source" position={Position.Right} style={handleStyle('emerald')} />
-    </div>
+    </NodeWrapper>
   )
 }
 
-// ─── Detail Node ──────────────────────────────────────────────────────────────
+// ─── Detail Node ───────────────────────────────────────────────────────────────
 
-export interface DetailData {
-  titleSelector:       string
-  yearSelector:        string
-  ratingSelector:      string
-  durationSelector:    string
-  directorSelector:    string
-  descriptionSelector: string
-  castSelector:        string
-  posterSelector:      string
-}
-
-const DETAIL_FIELDS: { key: keyof DetailData; label: string; placeholder: string }[] = [
-  { key: 'titleSelector',       label: 'Title',       placeholder: 'h1.title, .movie-title' },
-  { key: 'yearSelector',        label: 'Year',        placeholder: '.year, .release-year' },
-  { key: 'ratingSelector',      label: 'Rating',      placeholder: '.rating, .score, .imdb' },
-  { key: 'durationSelector',    label: 'Duration',    placeholder: '.duration, .runtime' },
-  { key: 'directorSelector',    label: 'Director',    placeholder: '.director, [itemprop="director"]' },
-  { key: 'descriptionSelector', label: 'Description', placeholder: '.synopsis, .plot, p.desc' },
-  { key: 'castSelector',        label: 'Cast',        placeholder: '.cast a, [itemprop="actor"]' },
-  { key: 'posterSelector',      label: 'Poster',      placeholder: '.poster img, img.thumb' },
+export const DEFAULT_DETAIL_FIELDS: DetailField[] = [
+  { id: 'title',       label: 'Title',       selector: '' },
+  { id: 'year',        label: 'Year',        selector: '' },
+  { id: 'rating',      label: 'Rating',      selector: '' },
+  { id: 'duration',    label: 'Duration',    selector: '' },
+  { id: 'director',    label: 'Director',    selector: '' },
+  { id: 'description', label: 'Description', selector: '' },
+  { id: 'cast',        label: 'Cast',        selector: '' },
+  { id: 'poster',      label: 'Poster',      selector: '' },
 ]
 
-export function DetailNode({ id, data }: NodeProps) {
+export function DetailNode({ id, data, selected }: NodeProps) {
   const { updateNodeData } = useReactFlow()
   const d = data as unknown as DetailData
+  const fields = d.fields ?? DEFAULT_DETAIL_FIELDS
+
+  const configuredCount = fields.filter(f => f.selector.trim()).length
+
+  const updateField = (fieldId: string, selector: string) => {
+    updateNodeData(id, {
+      fields: fields.map(f => f.id === fieldId ? { ...f, selector } : f),
+    })
+  }
+
+  const removeField = (fieldId: string) => {
+    updateNodeData(id, { fields: fields.filter(f => f.id !== fieldId) })
+  }
+
+  const addField = () => {
+    const newId = `custom-${Date.now()}`
+    updateNodeData(id, {
+      fields: [...fields, { id: newId, label: 'Custom Field', selector: '' }],
+    })
+  }
+
+  const updateLabel = (fieldId: string, label: string) => {
+    updateNodeData(id, {
+      fields: fields.map(f => f.id === fieldId ? { ...f, label } : f),
+    })
+  }
 
   return (
-    <div className="w-72 bg-[#13151f] border border-[#2e3350] rounded-xl shadow-2xl overflow-hidden">
+    <NodeWrapper id={id} selected={selected} accent="amber" accentClass="bg-amber-600" icon={FileSearch} label="Detail Extractor">
       <Handle type="target" position={Position.Left} style={handleStyle('amber')} />
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-amber-600">
-        <FileSearch className="w-3.5 h-3.5 text-white shrink-0" />
-        <span className="text-[11px] font-bold text-white tracking-widest uppercase">Detail Extractor</span>
-      </div>
       <div className="p-3 space-y-2 nodrag nopan">
-        <p className="text-[10px] text-slate-500 leading-relaxed">
-          Custom CSS selectors for each field. Leave blank to use built-in auto-detection.
-        </p>
-        {DETAIL_FIELDS.map(({ key, label, placeholder }) => (
-          <Field key={key} label={label}>
-            <input
-              className={inputCls}
-              placeholder={placeholder}
-              value={d[key]}
-              onChange={e => updateNodeData(id, { [key]: e.target.value })}
-            />
-          </Field>
+        {/* Summary badge */}
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] text-slate-500 leading-relaxed flex-1">
+            CSS selectors per field. Leave blank for auto-detection.
+          </p>
+          <span className={cn(
+            'text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ml-2',
+            configuredCount > 0
+              ? 'bg-amber-600/20 text-amber-300'
+              : 'bg-[#1a1d27] text-slate-500',
+          )}>
+            {configuredCount}/{fields.length}
+          </span>
+        </div>
+
+        {/* Fields list */}
+        {fields.map((field) => (
+          <div key={field.id} className="group/field flex items-start gap-1.5">
+            <GripVertical className="w-3 h-3 text-slate-700 shrink-0 mt-2.5 group-hover/field:text-slate-500 transition-colors" />
+            <div className="flex-1 min-w-0 space-y-1">
+              <input
+                className="nodrag nopan w-full bg-transparent text-[10px] font-semibold text-slate-400 uppercase tracking-wider focus:outline-none focus:text-slate-200 transition-colors"
+                value={field.label}
+                onChange={e => updateLabel(field.id, e.target.value)}
+                title="Click to rename field"
+              />
+              <input
+                className={inputCls}
+                placeholder={`CSS selector for ${field.label.toLowerCase()}…`}
+                value={field.selector}
+                onChange={e => updateField(field.id, e.target.value)}
+              />
+            </div>
+            <button
+              onClick={() => removeField(field.id)}
+              className="nodrag nopan mt-2.5 p-0.5 text-slate-700 hover:text-red-400 transition-colors shrink-0 opacity-0 group-hover/field:opacity-100"
+              title="Remove field"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
         ))}
+
+        {/* Add field */}
+        <button
+          onClick={addField}
+          className="nodrag nopan w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[10px] font-medium text-amber-400 border border-dashed border-amber-600/30 hover:border-amber-500/60 hover:bg-amber-600/5 transition-colors"
+        >
+          <Plus className="w-3 h-3" />
+          Add Field
+        </button>
       </div>
       <Handle type="source" position={Position.Right} style={handleStyle('amber')} />
-    </div>
+    </NodeWrapper>
   )
 }
 
-// ─── Export Node ──────────────────────────────────────────────────────────────
+// ─── Export Node ───────────────────────────────────────────────────────────────
 
-export interface ExportData {
-  outputDir:   string
-  exportJson:  boolean
-  exportExcel: boolean
-  exportCsv:   boolean
-}
-
-export function ExportNode({ id, data }: NodeProps) {
+export function ExportNode({ id, data, selected }: NodeProps) {
   const { updateNodeData } = useReactFlow()
   const d = data as unknown as ExportData
 
@@ -285,13 +473,16 @@ export function ExportNode({ id, data }: NodeProps) {
     if (dir) updateNodeData(id, { outputDir: dir })
   }
 
+  const formats = [
+    { key: 'exportJson'  as const, label: 'JSON'         },
+    { key: 'exportExcel' as const, label: 'Excel (.xlsx)' },
+    { key: 'exportCsv'   as const, label: 'CSV'          },
+  ]
+  const activeFormats = formats.filter(f => d[f.key]).map(f => f.label)
+
   return (
-    <div className="w-72 bg-[#13151f] border border-[#2e3350] rounded-xl shadow-2xl overflow-hidden">
+    <NodeWrapper id={id} selected={selected} accent="slate" accentClass="bg-slate-600" icon={Download} label="Export">
       <Handle type="target" position={Position.Left} style={handleStyle('slate')} />
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-600">
-        <Download className="w-3.5 h-3.5 text-white shrink-0" />
-        <span className="text-[11px] font-bold text-white tracking-widest uppercase">Export</span>
-      </div>
       <div className="p-3 space-y-2.5">
         <Field label="Output Folder">
           <div className="flex gap-1.5">
@@ -311,27 +502,90 @@ export function ExportNode({ id, data }: NodeProps) {
         </Field>
         <Field label="Export Formats">
           <div className="flex flex-col gap-1.5 pt-0.5">
-            {([
-              { key: 'exportJson',  label: 'JSON' },
-              { key: 'exportExcel', label: 'Excel (.xlsx)' },
-              { key: 'exportCsv',   label: 'CSV' },
-            ] as { key: keyof ExportData; label: string }[]).map(({ key, label }) => (
+            {formats.map(({ key, label }) => (
               <label key={key} className="nodrag nopan flex items-center gap-2 cursor-pointer">
-                <Toggle
-                  value={d[key] as boolean}
-                  onChange={v => updateNodeData(id, { [key]: v })}
-                />
+                <Toggle value={d[key]} onChange={v => updateNodeData(id, { [key]: v })} />
                 <span className="text-xs text-slate-400">{label}</span>
               </label>
             ))}
           </div>
         </Field>
+        {activeFormats.length === 0 && (
+          <div className="flex items-center gap-1.5 text-[10px] text-amber-400 bg-amber-600/10 border border-amber-500/20 rounded-md px-2 py-1.5">
+            <AlertCircle className="w-3 h-3 shrink-0" />
+            Enable at least one format
+          </div>
+        )}
       </div>
-    </div>
+    </NodeWrapper>
   )
 }
 
-// ─── Node types registry ──────────────────────────────────────────────────────
+// ─── Custom Edge ───────────────────────────────────────────────────────────────
+
+export function CustomEdge({
+  id, sourceX, sourceY, targetX, targetY,
+  sourcePosition, targetPosition, style, markerEnd, selected,
+}: EdgeProps) {
+  const { deleteElements } = useReactFlow()
+  const [hovered, setHovered] = useState(false)
+
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX, sourceY, sourcePosition,
+    targetX, targetY, targetPosition,
+  })
+
+  const showDelete = hovered || selected
+
+  return (
+    <>
+      <BaseEdge
+        path={edgePath}
+        markerEnd={markerEnd}
+        style={{
+          ...style,
+          stroke: selected ? '#818cf8' : hovered ? '#a5b4fc' : '#6366f1',
+          strokeWidth: hovered || selected ? 3 : 2,
+          transition: 'stroke 0.15s, stroke-width 0.15s',
+        }}
+      />
+      {/* Wider invisible hit area for easier hover */}
+      <path
+        d={edgePath}
+        fill="none"
+        strokeWidth={16}
+        stroke="transparent"
+        className="react-flow__edge-interaction"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      />
+      <EdgeLabelRenderer>
+        <div
+          style={{
+            position: 'absolute',
+            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+            pointerEvents: 'all',
+            opacity: showDelete ? 1 : 0,
+            transition: 'opacity 0.15s',
+          }}
+          className="nodrag nopan"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+        >
+          <button
+            onClick={() => deleteElements({ edges: [{ id }] })}
+            className="flex items-center justify-center w-5 h-5 rounded-full bg-[#1a1d27] border border-red-500/60 text-red-400 hover:bg-red-950/60 hover:border-red-400 shadow-lg transition-all"
+            title="Delete connection"
+          >
+            <X className="w-2.5 h-2.5" />
+          </button>
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  )
+}
+
+// ─── Registry ──────────────────────────────────────────────────────────────────
 
 export const nodeTypes = {
   source:    SourceNode,
@@ -341,7 +595,11 @@ export const nodeTypes = {
   export:    ExportNode,
 } as const
 
-// ─── Default data per node type ───────────────────────────────────────────────
+export const edgeTypes = {
+  custom: CustomEdge,
+} as const
+
+// ─── Default data ──────────────────────────────────────────────────────────────
 
 export const defaultNodeData: Record<string, object> = {
   source: {
@@ -360,14 +618,7 @@ export const defaultNodeData: Record<string, object> = {
     maxMovies:        100,
   } satisfies MovieListData,
   detail: {
-    titleSelector:       '',
-    yearSelector:        '',
-    ratingSelector:      '',
-    durationSelector:    '',
-    directorSelector:    '',
-    descriptionSelector: '',
-    castSelector:        '',
-    posterSelector:      '',
+    fields: DEFAULT_DETAIL_FIELDS.map(f => ({ ...f })),
   } satisfies DetailData,
   export: {
     outputDir:   '',
@@ -377,12 +628,12 @@ export const defaultNodeData: Record<string, object> = {
   } satisfies ExportData,
 }
 
-// ─── Palette definition (used by NodePalette) ─────────────────────────────────
+// ─── Palette ───────────────────────────────────────────────────────────────────
 
 export const PALETTE_NODES = [
-  { type: 'source',    label: 'Source',           icon: Globe2,      color: 'bg-indigo-600',  desc: 'Base URL & browser config' },
-  { type: 'category',  label: 'Categories',       icon: Layers,      color: 'bg-violet-600',  desc: 'Category link selector'   },
-  { type: 'movieList', label: 'Movie List',        icon: List,        color: 'bg-emerald-600', desc: 'Movie items & pagination'  },
-  { type: 'detail',    label: 'Detail Extractor',  icon: FileSearch,  color: 'bg-amber-600',   desc: 'Per-field CSS selectors'  },
-  { type: 'export',    label: 'Export',            icon: Download,    color: 'bg-slate-600',   desc: 'Output folder & formats'  },
+  { type: 'source',    label: 'Source',          icon: Globe2,     color: 'bg-indigo-600',  desc: 'Base URL & browser config' },
+  { type: 'category',  label: 'Categories',      icon: Layers,     color: 'bg-violet-600',  desc: 'Category link selector'   },
+  { type: 'movieList', label: 'Movie List',       icon: List,       color: 'bg-emerald-600', desc: 'Movie items & pagination'  },
+  { type: 'detail',    label: 'Detail Extractor', icon: FileSearch, color: 'bg-amber-600',   desc: 'Per-field CSS selectors'  },
+  { type: 'export',    label: 'Export',           icon: Download,   color: 'bg-slate-600',   desc: 'Output folder & formats'  },
 ] as const

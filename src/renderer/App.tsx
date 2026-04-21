@@ -1,3 +1,4 @@
+import '@xyflow/react/dist/style.css'
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import Layout       from '@/components/layout/Layout'
 import Dashboard    from '@/pages/Dashboard'
