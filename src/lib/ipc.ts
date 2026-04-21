@@ -15,6 +15,8 @@ export interface MovieData {
   cast?:        string
   description?: string
   poster?:      string
+  videoUrl?:    string
+  subtitles?:   string
 }
 
 export interface ScraperConfig {
