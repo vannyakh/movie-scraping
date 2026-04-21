@@ -5,11 +5,12 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
-    "dev:watch": "electron-vite dev --watch",
+    "postinstall": "node node_modules/electron/install.js",
+    "dev": "node node_modules/electron/install.js && electron-vite dev",
+    "dev:watch": "node node_modules/electron/install.js && electron-vite dev --watch",
     "build": "electron-vite build && node scripts/run-electron-builder.mjs",
     "build:watch": "electron-vite build --watch",
-    "preview": "electron-vite preview",
+    "preview": "node node_modules/electron/install.js && electron-vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
