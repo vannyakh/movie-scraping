@@ -34,6 +34,16 @@ export interface ScraperConfig {
     categories?: string
     movieList?:  string
     nextPage?:   string
+    detail?: {
+      title?:       string
+      year?:        string
+      rating?:      string
+      duration?:    string
+      director?:    string
+      description?: string
+      cast?:        string
+      poster?:      string
+    }
   }
 }
 

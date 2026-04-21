@@ -48,6 +48,16 @@ export interface ScraperConfig {
     categories?: string
     movieList?:  string
     nextPage?:   string
+    detail?: {
+      title?:       string
+      year?:        string
+      rating?:      string
+      duration?:    string
+      director?:    string
+      description?: string
+      cast?:        string
+      poster?:      string
+    }
   }
 }
 
@@ -366,9 +376,10 @@ const VIDEO_PATH_RE = /\/(manifest|playlist|index)\.(m3u8|mpd)/i
 const VIDEO_HINT_RE = /\/(hls|dash|stream|video)\//i
 
 async function scrapeMovieDetail(
-  page:  Page,
-  movie: { title: string; url: string; category: string },
-  onLog: LogCallback,
+  page:   Page,
+  movie:  { title: string; url: string; category: string },
+  onLog:  LogCallback,
+  config: ScraperConfig,
 ): Promise<MovieData> {
   try {
     // ── Network interception: capture video manifests before they become blob ──
@@ -395,7 +406,8 @@ async function scrapeMovieDetail(
       capturedVideos[0]
 
     // ── DOM extraction (OG / JSON-LD / CSS / JWPlayer API) ────────────────────
-    const data = await page.evaluate(() => {
+    const customDetailSels = config.selectors?.detail ?? {}
+    const data = await page.evaluate((cs) => {
       // Helper: first non-empty text from a list of selectors
       const text = (...sels: string[]) => {
         for (const sel of sels) {
@@ -422,19 +434,37 @@ async function scrapeMovieDetail(
         }
       } catch { /* ignore */ }
 
-      // ── C: CSS selectors ─────────────────────────────────────────────────
-      const title = text('h1.title','h1.movie-title','h1.film-title','h1.entry-title','.detail-title h1','.info h1','#title','h1')
-      const year = text('.year','.release-year','.meta-year','[itemprop="dateCreated"]','span.year','.film-info .year','.movie-info .year','.movie-year','.film-year','.info-year')
-      const rating = text('.rating','.score','.imdb','.star','[itemprop="ratingValue"]','.rate','.film-rate','.kkrating')
-      const duration = text('.duration','.runtime','.time','[itemprop="duration"]','.meta-runtime','.film-duration','span.runtime')
-      const director = text('.director','[itemprop="director"]','.director a','.movie-director','.film-director','.info-director','[class*="director"]')
-      const description = text('[itemprop="description"]','.description','.synopsis','.plot','.movie-description','.film-description','.content','p.desc','.detail-content p')
-      const cast = Array.from(
-        document.querySelectorAll('[itemprop="actor"], .cast a, .actors a, .actor a, .list-actor a, .movie-cast a, .film-cast a'),
-      ).slice(0, 10).map((el) => (el as HTMLElement).innerText?.trim()).filter(Boolean).join(', ')
-      const poster =
-        document.querySelector<HTMLImageElement>('[itemprop="image"] img, .poster img, .thumb img, .film-poster img, .movie-poster img')?.src ||
-        document.querySelector<HTMLImageElement>('img.poster, img.thumb, img[class*="poster"]')?.src
+      // ── C: CSS selectors — custom first, then built-in fallbacks ─────────
+      const title = cs.title
+        ? text(cs.title, 'h1.title','h1.movie-title','h1.film-title','h1.entry-title','.detail-title h1','.info h1','#title','h1')
+        : text('h1.title','h1.movie-title','h1.film-title','h1.entry-title','.detail-title h1','.info h1','#title','h1')
+      const year = cs.year
+        ? text(cs.year, '.year','.release-year','.meta-year','[itemprop="dateCreated"]','span.year','.film-info .year','.movie-year')
+        : text('.year','.release-year','.meta-year','[itemprop="dateCreated"]','span.year','.film-info .year','.movie-info .year','.movie-year','.film-year','.info-year')
+      const rating = cs.rating
+        ? text(cs.rating, '.rating','.score','.imdb','.star','[itemprop="ratingValue"]','.rate','.film-rate','.kkrating')
+        : text('.rating','.score','.imdb','.star','[itemprop="ratingValue"]','.rate','.film-rate','.kkrating')
+      const duration = cs.duration
+        ? text(cs.duration, '.duration','.runtime','.time','[itemprop="duration"]','.meta-runtime','.film-duration','span.runtime')
+        : text('.duration','.runtime','.time','[itemprop="duration"]','.meta-runtime','.film-duration','span.runtime')
+      const director = cs.director
+        ? text(cs.director, '.director','[itemprop="director"]','.director a','.movie-director','.film-director','.info-director','[class*="director"]')
+        : text('.director','[itemprop="director"]','.director a','.movie-director','.film-director','.info-director','[class*="director"]')
+      const description = cs.description
+        ? text(cs.description, '[itemprop="description"]','.description','.synopsis','.plot','.movie-description','.film-description','.content','p.desc','.detail-content p')
+        : text('[itemprop="description"]','.description','.synopsis','.plot','.movie-description','.film-description','.content','p.desc','.detail-content p')
+      const cast = cs.cast
+        ? Array.from(document.querySelectorAll(cs.cast)).slice(0, 10).map((el) => (el as HTMLElement).innerText?.trim()).filter(Boolean).join(', ') ||
+          Array.from(document.querySelectorAll('[itemprop="actor"], .cast a, .actors a, .actor a, .list-actor a, .movie-cast a, .film-cast a')).slice(0, 10).map((el) => (el as HTMLElement).innerText?.trim()).filter(Boolean).join(', ')
+        : Array.from(
+            document.querySelectorAll('[itemprop="actor"], .cast a, .actors a, .actor a, .list-actor a, .movie-cast a, .film-cast a'),
+          ).slice(0, 10).map((el) => (el as HTMLElement).innerText?.trim()).filter(Boolean).join(', ')
+      const poster = cs.poster
+        ? document.querySelector<HTMLImageElement>(cs.poster)?.src ||
+          document.querySelector<HTMLImageElement>('[itemprop="image"] img, .poster img, .thumb img, .film-poster img, .movie-poster img')?.src ||
+          document.querySelector<HTMLImageElement>('img.poster, img.thumb, img[class*="poster"]')?.src
+        : document.querySelector<HTMLImageElement>('[itemprop="image"] img, .poster img, .thumb img, .film-poster img, .movie-poster img')?.src ||
+          document.querySelector<HTMLImageElement>('img.poster, img.thumb, img[class*="poster"]')?.src
 
       // ── D: JWPlayer JS API ────────────────────────────────────────────────
       interface JWPlayer {
@@ -508,7 +538,7 @@ async function scrapeMovieDetail(
         jwVideoUrl,
         subtitles:   jwSubtitles.join(', ') || '',
       }
-    })
+    }, customDetailSels)
 
     return {
       title:       data.title       || movie.title,
@@ -645,7 +675,7 @@ export async function runScraper(
       await controller.checkPause(onLog)
       const movie = unique[i]
       onProgress({ step: 3, label: 'Detail Pages', current: i, total: unique.length, message: `"${movie.title}"` })
-      const detail = await scrapeMovieDetail(page, movie, onLog)
+      const detail = await scrapeMovieDetail(page, movie, onLog, config)
       details.push(detail)
       onMovieBatch([detail])
       if (delayMs > 0) await sleep(delayMs)

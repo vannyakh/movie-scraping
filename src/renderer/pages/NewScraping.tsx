@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { FolderOpen, Play, ChevronDown, ChevronUp, Globe, Settings2 } from 'lucide-react'
+import { FolderOpen, Play, ChevronDown, ChevronUp, Globe, Settings2, Workflow, SlidersHorizontal } from 'lucide-react'
 import { useScrapingStore } from '@/store/scrapingStore'
 import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
@@ -127,6 +127,34 @@ export default function NewScraping() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-100">New Scraping Job</h1>
         <p className="text-slate-400 text-sm mt-1">Configure your scraping parameters then hit Start</p>
+      </div>
+
+      {/* Mode selector */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <div className="flex flex-col gap-2 p-4 rounded-xl bg-indigo-600/15 border-2 border-indigo-500/60 cursor-default">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-white" />
+            </div>
+            <span className="text-sm font-bold text-indigo-300">Quick Form</span>
+            <span className="ml-auto text-[10px] font-semibold bg-indigo-600/40 text-indigo-200 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Active</span>
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed">Fill in a form and start immediately. Best for one-off scraping jobs.</p>
+        </div>
+        <button
+          onClick={() => navigate('/flow')}
+          className="flex flex-col gap-2 p-4 rounded-xl bg-[#1a1d27] border-2 border-[#2e3350] hover:border-violet-500/50 hover:bg-violet-600/10 transition-all text-left group"
+        >
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-violet-600/40 group-hover:bg-violet-600 flex items-center justify-center shrink-0 transition-colors">
+              <Workflow className="w-3.5 h-3.5 text-violet-300 group-hover:text-white transition-colors" />
+            </div>
+            <span className="text-sm font-bold text-slate-400 group-hover:text-violet-300 transition-colors">Flow Builder</span>
+          </div>
+          <p className="text-xs text-slate-500 group-hover:text-slate-400 leading-relaxed transition-colors">
+            Visual node graph — connect stages and set custom CSS selectors per step.
+          </p>
+        </button>
       </div>
 
       <div className="flex flex-col gap-5">

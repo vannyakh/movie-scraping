@@ -1,11 +1,12 @@
 import { HashRouter, Routes, Route } from 'react-router-dom'
-import Layout      from '@/components/layout/Layout'
-import Dashboard   from '@/pages/Dashboard'
-import NewScraping from '@/pages/NewScraping'
+import Layout       from '@/components/layout/Layout'
+import Dashboard    from '@/pages/Dashboard'
+import NewScraping  from '@/pages/NewScraping'
 import ProgressPage from '@/pages/ProgressPage'
-import Results     from '@/pages/Results'
-import HistoryPage from '@/pages/History'
-import Settings    from '@/pages/Settings'
+import Results      from '@/pages/Results'
+import HistoryPage  from '@/pages/History'
+import Settings     from '@/pages/Settings'
+import FlowBuilder  from '@/pages/FlowBuilder'
 
 export default function App() {
   if (!window.electronAPI) {
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="results"  element={<Results />}      />
           <Route path="history"  element={<HistoryPage />}  />
           <Route path="settings" element={<Settings />}     />
+          <Route path="flow"     element={<FlowBuilder />}  />
         </Route>
       </Routes>
     </HashRouter>
