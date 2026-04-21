@@ -23,6 +23,9 @@ body { min-height: 100vh; }
 ::-webkit-scrollbar-thumb  { background: #2e3350; border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: #3d4468; }
 
-/* ── Sonner toast overrides ──────────────────────────────────────────────── */
-
 [data-sonner-toaster] { font-family: inherit !important; font-size: 13px !important; }
+
+.react-flow__pane                         { cursor: default  !important; }
+.flow-pan-mode .react-flow__pane          { cursor: grab     !important; }
+.flow-pan-mode .react-flow__pane.dragging { cursor: grabbing !important; }
+.react-flow__attribution { display: none; }
