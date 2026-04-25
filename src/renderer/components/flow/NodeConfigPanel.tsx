@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
-import { type Node } from '@xyflow/react'
-import { Settings2, Eye, Code2, Copy, Check, Trash2, X } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { type Node, type Edge } from '@xyflow/react'
+import { Settings2, Eye, Code2, Copy, Check, Trash2, X, Play, Square, Terminal, Table2, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PALETTE_NODES, getSampleData, type PaletteNodeMeta, ACCENT_HEX, NODE_ACCENT_KEY } from './nodes'
 import type {
@@ -96,11 +96,249 @@ function JsonViewer({ nodeType, nodeData }: { nodeType: string; nodeData: unknow
   )
 }
 
+// ─── Test Run Panel ───────────────────────────────────────────────────────────
+
+/** Source nodes — they are the roots of a workflow chain */
+const SOURCE_NODES = new Set(['browser-source', 'http-source', 'api-source'])
+
+type TestState = 'idle' | 'running' | 'done' | 'error'
+
+interface RecordTableProps { records: unknown[] }
+
+function RecordTable({ records }: RecordTableProps) {
+  if (!records.length) return <p className="text-[10px] text-slate-600 text-center py-4">No records returned.</p>
+
+  const allKeys = Array.from(new Set(records.flatMap((r) => Object.keys(r as Record<string, unknown>))))
+  const dataKeys = allKeys.filter((k) => !k.startsWith('_'))
+  const metaKeys = allKeys.filter((k) => k.startsWith('_'))
+  const keys = [...dataKeys, ...metaKeys].slice(0, 10) // cap columns
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-[#2a2e45] bg-[#0d0f1a]">
+      <table className="text-[10px] w-full">
+        <thead>
+          <tr className="border-b border-[#1e2235]">
+            {keys.map((k) => (
+              <th key={k} className={cn(
+                'px-2.5 py-1.5 text-left font-semibold whitespace-nowrap',
+                k.startsWith('_') ? 'text-slate-600' : 'text-slate-400',
+              )}>
+                {k}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((row, i) => {
+            const r = row as Record<string, unknown>
+            return (
+              <tr key={i} className={cn('border-b border-[#1a1d27] last:border-0', i % 2 === 0 ? 'bg-transparent' : 'bg-white/[0.01]')}>
+                {keys.map((k) => {
+                  const v = r[k]
+                  const str = v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v).slice(0, 60) : String(v)
+                  const isUrl = typeof v === 'string' && (v.startsWith('http://') || v.startsWith('https://'))
+                  return (
+                    <td key={k} className="px-2.5 py-1.5 max-w-[200px] truncate" title={str}>
+                      {isUrl
+                        ? <a href={v as string} target="_blank" rel="noreferrer"
+                            className="text-sky-400 hover:underline">{str.slice(0, 60)}</a>
+                        : <span className={cn(
+                            typeof v === 'number' ? 'text-emerald-400' :
+                            typeof v === 'boolean' ? 'text-violet-400' :
+                            k.startsWith('_') ? 'text-slate-600' : 'text-slate-300',
+                          )}>{str || <span className="text-slate-700 italic">—</span>}</span>
+                      }
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function TestRunPanel({
+  node, edges, allNodes, hex,
+}: {
+  node: Node
+  edges: Edge[]
+  allNodes: Node[]
+  hex: string
+}) {
+  const [state,     setState]     = useState<TestState>('idle')
+  const [logs,      setLogs]      = useState<string[]>([])
+  const [records,   setRecords]   = useState<unknown[]>([])
+  const [error,     setError]     = useState<string | null>(null)
+  const [showTable, setShowTable] = useState(true)
+  const logRef = useRef<HTMLDivElement>(null)
+
+  // Reset when switching nodes
+  useEffect(() => {
+    setLogs([])
+    setRecords([])
+    setState('idle')
+    setError(null)
+  }, [node.id])
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
+  }, [logs])
+
+  // Subscribe to IPC push events
+  useEffect(() => {
+    const offLog  = window.electronAPI.onNodeTestLog((text) => setLogs((l) => [...l, text]))
+    const offDone = window.electronAPI.onNodeTestComplete((res) => {
+      setState(res.success ? 'done' : 'error')
+      setRecords(res.records)
+      if (!res.success && res.error) setError(res.error)
+    })
+    return () => { offLog(); offDone() }
+  }, [])
+
+  // Compute ancestor chain for the badge
+  const isSource = SOURCE_NODES.has(node.type ?? '')
+  const chainLen = (() => {
+    const visited = new Set<string>([node.id])
+    const queue   = [node.id]
+    while (queue.length) {
+      const cur = queue.shift()!
+      for (const e of edges) {
+        if (e.target === cur && !visited.has(e.source)) {
+          visited.add(e.source)
+          queue.push(e.source)
+        }
+      }
+    }
+    return visited.size
+  })()
+
+  const run = async () => {
+    setLogs([])
+    setRecords([])
+    setError(null)
+    setState('running')
+
+    // Build serialisable WorkflowNodeConfig / WorkflowEdgeConfig arrays
+    const wfNodes = allNodes.map((n) => ({ id: n.id, type: n.type ?? '', data: n.data as Record<string, unknown> }))
+    const wfEdges = edges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
+    await window.electronAPI.testNode(node.id, wfNodes, wfEdges)
+  }
+
+  const stop = () => {
+    window.electronAPI.stopNodeTest()
+    setState('idle')
+    setLogs((l) => [...l, '⏹ Stopped.'])
+  }
+
+  const isRunning = state === 'running'
+
+  return (
+    <div className="flex flex-col h-full space-y-3">
+      {/* Chain info banner */}
+      <div className="rounded-xl bg-indigo-600/8 border border-indigo-500/20 px-3 py-2.5">
+        <p className="text-[11px] text-indigo-300 font-semibold">
+          {isSource
+            ? 'This is a source node — runs standalone.'
+            : `Runs ${chainLen} upstream node${chainLen !== 1 ? 's' : ''} in sequence, then returns output from this node.`
+          }
+        </p>
+        <p className="text-[10px] text-indigo-400/70 mt-0.5">
+          Max 5 records · 1 page · no file export during test
+        </p>
+      </div>
+
+      {/* Run / Stop */}
+      <div className="flex items-center gap-2">
+        {isRunning ? (
+          <button onClick={stop}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-red-600/20 border border-red-500/40 text-red-300 hover:bg-red-600/30 transition-colors">
+            <Square className="w-3.5 h-3.5" /> Stop
+          </button>
+        ) : (
+          <button onClick={run}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors"
+            style={{ background: `${hex}22`, border: `1px solid ${hex}55`, color: hex }}>
+            <Play className="w-3.5 h-3.5" /> Run Test
+          </button>
+        )}
+
+        <span className={cn('text-[10px] font-semibold ml-auto', {
+          'text-slate-500':   state === 'idle',
+          'text-amber-400':   state === 'running',
+          'text-emerald-400': state === 'done',
+          'text-red-400':     state === 'error',
+        })}>
+          {state === 'idle'    && 'Ready'}
+          {state === 'running' && 'Running…'}
+          {state === 'done'    && `✓ ${records.length} record${records.length !== 1 ? 's' : ''}`}
+          {state === 'error'   && '✕ Error'}
+        </span>
+      </div>
+
+      {/* Live log stream */}
+      {logs.length > 0 && (
+        <div className="flex-shrink-0">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Terminal className="w-3 h-3 text-slate-500" />
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Logs</span>
+          </div>
+          <div
+            ref={logRef}
+            className="bg-[#080a11] border border-[#1e2235] rounded-xl p-2.5 h-40 overflow-y-auto font-mono text-[10px] leading-[1.7]"
+          >
+            {logs.map((line, i) => (
+              <div key={i} className={cn('whitespace-pre-wrap break-all flex items-start gap-1',
+                line.startsWith('✓') ? 'text-emerald-400' :
+                line.startsWith('✕') ? 'text-red-400'     :
+                line.startsWith('▶') ? 'text-indigo-400'  :
+                line.startsWith('─') ? 'text-slate-700'   :
+                line.startsWith('  [') ? 'text-slate-600' :
+                'text-slate-400',
+              )}>
+                <ChevronRight className="w-2.5 h-2.5 mt-0.5 shrink-0 text-slate-700" />
+                <span>{line}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Results table */}
+      {(state === 'done' || records.length > 0) && (
+        <div className="flex-1 min-h-0 overflow-auto">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Table2 className="w-3 h-3 text-slate-500" />
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+              Results ({records.length})
+            </span>
+            <button onClick={() => setShowTable(v => !v)}
+              className="ml-auto text-[10px] text-slate-600 hover:text-slate-400 transition-colors">
+              {showTable ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {showTable && <RecordTable records={records} />}
+        </div>
+      )}
+
+      {error && state === 'error' && (
+        <div className="rounded-xl bg-red-600/10 border border-red-500/20 px-3 py-2">
+          <p className="text-[10px] text-red-400 font-mono break-all">{error}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
 export interface NodeConfigPanelProps {
   nodeId:           string | null
   nodes:            Node[]
+  edges:            Edge[]
   defaultTab?:      'config' | 'preview'
   onClose:          () => void
   onUpdateNodeData: (id: string, patch: Partial<object>) => void
@@ -108,10 +346,10 @@ export interface NodeConfigPanelProps {
 }
 
 export function NodeConfigPanel({
-  nodeId, nodes, defaultTab = 'config', onClose, onUpdateNodeData, onDeleteNode,
+  nodeId, nodes, edges, defaultTab = 'config', onClose, onUpdateNodeData, onDeleteNode,
 }: NodeConfigPanelProps) {
   const node = nodeId ? nodes.find((n) => n.id === nodeId) : null
-  const [tab, setTab] = useState<'config' | 'preview'>(defaultTab)
+  const [tab, setTab] = useState<'config' | 'preview' | 'run'>(defaultTab)
 
   useEffect(() => { setTab(defaultTab) }, [nodeId, defaultTab])
   useEffect(() => {
@@ -199,6 +437,7 @@ export function NodeConfigPanel({
           <div className="flex shrink-0 bg-[#0d0f1a] border-b border-[#1e2235]">
             {([
               ['config',  Settings2, 'Config'  ],
+              ['run',     Play,      'Run'     ],
               ['preview', Eye,       'Preview' ],
             ] as const).map(([t, TIcon, tlabel]) => (
               <button
@@ -218,8 +457,9 @@ export function NodeConfigPanel({
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className={cn('flex-1 p-4 space-y-4', tab === 'run' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto')}>
             {tab === 'config' && renderPanel()}
+            {tab === 'run' && <TestRunPanel node={node} edges={edges} allNodes={nodes} hex={hex} />}
             {tab === 'preview' && node.type && (
               <JsonViewer nodeType={node.type} nodeData={node.data} />
             )}

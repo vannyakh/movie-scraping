@@ -23,16 +23,18 @@ import { executeWebhook }       from './nodes/webhook'
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface EngineContext {
-  browser?:   Browser
-  page?:      Page
-  onLog:      (msg: string) => void
-  onProgress: (step: number, totalSteps: number, current: number, total: number, message: string, nodeId?: string) => void
-  onBatch:    (records: DataRecord[]) => void
-  onNodeStatus: (status: NodeStatus) => void
-  controller: EngineController
-  aiApiKey?:  string
-  aiProvider?: string
-  aiModel?:   string
+  browser?:      Browser
+  page?:         Page
+  onLog:         (msg: string) => void
+  onProgress:    (step: number, totalSteps: number, current: number, total: number, message: string, nodeId?: string) => void
+  onBatch:       (records: DataRecord[]) => void
+  onNodeStatus:  (status: NodeStatus) => void
+  controller:    EngineController
+  aiApiKey?:     string
+  aiProvider?:   string
+  aiModel?:      string
+  globalCookies: string          // from Settings → Global Cookies
+  proxyServer?:  string          // from Settings → Proxy (applied at browser launch)
 }
 
 export class EngineController {
@@ -137,14 +139,21 @@ export interface RunResult {
 }
 
 export async function runWorkflow(
-  config:      WorkflowConfig,
-  onProgress:  (p: JobProgress) => void,
-  onLog:       (msg: string) => void,
-  onBatch:     (records: DataRecord[]) => void,
-  onNodeStatus:(s: NodeStatus) => void,
-  controller:  EngineController,
-  aiConfig?:   { provider: string; apiKey: string; model: string },
+  config:       WorkflowConfig,
+  onProgress:   (p: JobProgress) => void,
+  onLog:        (msg: string) => void,
+  onBatch:      (records: DataRecord[]) => void,
+  onNodeStatus: (s: NodeStatus) => void,
+  controller:   EngineController,
+  settings?:    {
+    ai?:          { provider: string; apiKey: string; model: string }
+    proxy?:       { server: string; bypass: string }
+    globalCookies: string
+  },
 ): Promise<RunResult> {
+  const aiConfig     = settings?.ai
+  const proxyConfig  = settings?.proxy
+  const globalCookies = settings?.globalCookies ?? ''
   const { nodes, edges } = config
 
   // ── Build execution order ──────────────────────────────────────────────────
@@ -168,15 +177,41 @@ export async function runWorkflow(
     if (needsBrowser(nodeTypes)) {
       onLog('Launching browser…')
       // Use config from first browser-source node if present
-      const bsNode = nodes.find((n) => n.type === 'browser-source')
-      const headless = bsNode ? !!(bsNode.data.headless ?? true) : true
+      const bsNode    = nodes.find((n) => n.type === 'browser-source')
+      const headless  = bsNode ? !!(bsNode.data.headless ?? true) : true
       const userAgent = bsNode ? (bsNode.data.userAgent as string | undefined) : undefined
-      browser = await chromium.launch({ headless })
+
+      const launchOpts: Parameters<typeof chromium.launch>[0] = { headless }
+      if (proxyConfig) {
+        launchOpts.proxy = { server: proxyConfig.server, bypass: proxyConfig.bypass }
+        onLog(`Proxy: ${proxyConfig.server}`)
+      }
+      browser = await chromium.launch(launchOpts)
+
       const ctxOpts: Parameters<Browser['newContext']>[0] = {
         viewport: { width: 1280, height: 900 },
         ...(userAgent ? { userAgent } : {}),
       }
       const browserCtx: BrowserContext = await browser.newContext(ctxOpts)
+
+      // Apply global cookies if configured
+      if (globalCookies.trim()) {
+        try {
+          // We need at least one URL to set cookies — parse from first browser-source node
+          const seedUrl = bsNode?.data.url as string | undefined ?? 'http://localhost'
+          const pairs = globalCookies.split(';').map((s) => {
+            const [name, ...rest] = s.trim().split('=')
+            return { name: name.trim(), value: rest.join('=').trim(), url: seedUrl }
+          }).filter((c) => c.name)
+          if (pairs.length) {
+            await browserCtx.addCookies(pairs)
+            onLog(`Global cookies: ${pairs.length} cookie${pairs.length !== 1 ? 's' : ''} applied`)
+          }
+        } catch {
+          onLog('Warning: could not set global cookies')
+        }
+      }
+
       ctx_page = await browserCtx.newPage()
       ctx_page.setDefaultTimeout(30_000)
       onLog('Browser ready.')
@@ -184,16 +219,18 @@ export async function runWorkflow(
 
     const engineCtx: EngineContext = {
       browser,
-      page:       ctx_page,
+      page:          ctx_page,
       onLog,
-      onProgress: (step, _totalSteps, current, total, message, nodeId) =>
+      onProgress:    (step, _totalSteps, current, total, message, nodeId) =>
         onProgress(makeProgress(step, current, total, message, nodeId)),
       onBatch,
       onNodeStatus,
       controller,
-      aiApiKey:   aiConfig?.apiKey,
-      aiProvider: aiConfig?.provider,
-      aiModel:    aiConfig?.model,
+      aiApiKey:      aiConfig?.apiKey,
+      aiProvider:    aiConfig?.provider,
+      aiModel:       aiConfig?.model,
+      globalCookies,
+      proxyServer:   proxyConfig?.server,
     }
 
     let outputPaths: Record<string, string> | undefined

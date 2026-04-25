@@ -3,7 +3,7 @@ import { runWorkflow, EngineController } from '../scraper/engine'
 import { runScraper, ScrapeController } from '../scraper'
 import type { WorkflowConfig, ScraperConfig } from '@shared/ipc-types'
 import { getMainWindow } from './context'
-import { useSettingsStore } from './settings-bridge'
+import { readEngineSettings } from './settings-bridge'
 
 let workflowController: EngineController | null = null
 let legacyController: ScrapeController | null = null
@@ -16,7 +16,7 @@ export function registerScrapeIpc(): void {
     workflowController?.abort()
     workflowController = new EngineController()
 
-    const aiConfig = await useSettingsStore()
+    const engineSettings = await readEngineSettings()
 
     try {
       const result = await runWorkflow(
@@ -26,7 +26,7 @@ export function registerScrapeIpc(): void {
         (records)  => win?.webContents.send('workflow:batch', records),
         (status)   => win?.webContents.send('workflow:nodeStatus', status),
         workflowController,
-        aiConfig,
+        engineSettings,
       )
       win?.webContents.send('workflow:complete', result)
       return { success: true, result }

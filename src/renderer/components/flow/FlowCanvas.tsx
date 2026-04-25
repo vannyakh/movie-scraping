@@ -726,6 +726,7 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
                 <NodeConfigPanel
                   nodeId={configNodeId}
                   nodes={nodes}
+                  edges={edges}
                   defaultTab={configTab}
                   onClose={() => { setConfigNodeId(null); setConfigTab('config') }}
                   onUpdateNodeData={handleUpdateNodeData}

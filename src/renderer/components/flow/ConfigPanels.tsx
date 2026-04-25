@@ -4,7 +4,7 @@ import {
   Plus, X, GripVertical, FolderOpen, ShieldCheck, Cookie,
   MousePointerClick, Keyboard, Clock, ScrollText, ChevronDown,
   ArrowRight, ListOrdered, Infinity, Ban, CheckCircle2, AlertCircle,
-  Layers, Tag, Hash, Brackets,
+  Layers, Tag, Hash, Brackets, Sparkles, Wand2, RotateCcw,
 } from 'lucide-react'
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent,
@@ -341,6 +341,188 @@ function ActionSequenceBuilder({ actions, onChange }: {
   )
 }
 
+// ─── AI Selector Assistant ────────────────────────────────────────────────────
+
+interface SelectorSuggestion {
+  selectors:        Record<string, string>
+  itemSelector?:    string
+  paginationType?:  string
+  nextPageSelector?: string
+  urlPattern?:      string
+}
+
+interface AISelectorAssistantProps {
+  /** Field definitions to find selectors for (pass [] for list-page mode) */
+  fields:       Array<{ id: string; label: string; type?: string }>
+  /** Called when user applies suggestions */
+  onApply:      (s: SelectorSuggestion) => void
+  /** Optional URL hint */
+  pageUrl?:     string
+  /** Show list-page-specific fields (itemSelector, pagination) */
+  showListMode?: boolean
+}
+
+function AISelectorAssistant({ fields, onApply, pageUrl, showListMode }: AISelectorAssistantProps) {
+  const [open,    setOpen]    = useState(false)
+  const [html,    setHtml]    = useState('')
+  const [url,     setUrl]     = useState(pageUrl ?? '')
+  const [busy,    setBusy]    = useState(false)
+  const [result,  setResult]  = useState<SelectorSuggestion | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
+
+  const analyze = async () => {
+    if (!html.trim()) { setError('Paste some HTML first.'); return }
+    setBusy(true)
+    setError(null)
+    setResult(null)
+    try {
+      const resp = await window.electronAPI.analyzeSelectors(html, fields, url || undefined)
+      if ('__error' in resp) {
+        setError(resp.message)
+      } else {
+        setResult(resp)
+      }
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-violet-500/20 bg-violet-600/5 overflow-hidden">
+      {/* Header toggle */}
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-violet-600/10 transition-colors">
+        <Sparkles className="w-3.5 h-3.5 text-violet-400 shrink-0" />
+        <span className="text-xs font-semibold text-violet-300">AI Selector Assistant</span>
+        <span className="ml-1 text-[10px] text-violet-500">Paste HTML → auto-fill selectors</span>
+        <ChevronDown className={cn('w-3 h-3 text-violet-400 ml-auto transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3 space-y-3 border-t border-violet-500/15">
+          <p className="text-[10px] text-violet-400/80 pt-2">
+            Paste HTML from the page (right-click → Inspect → copy outer HTML of a card or the page body).
+            The AI will analyze it and suggest CSS selectors.
+          </p>
+
+          {/* Optional URL */}
+          <div>
+            <p className="text-[10px] font-semibold text-slate-500 mb-1 uppercase tracking-wider">Page URL (optional)</p>
+            <input className={inputCls} placeholder="https://example.com/movies/"
+              value={url} onChange={e => setUrl(e.target.value)} />
+          </div>
+
+          {/* HTML input */}
+          <div>
+            <p className="text-[10px] font-semibold text-slate-500 mb-1 uppercase tracking-wider">HTML Snippet</p>
+            <textarea
+              className={cn(inputCls, 'resize-y min-h-[100px] font-mono text-[10px] leading-relaxed')}
+              placeholder={'<article class="item movies">\n  …paste the card or section HTML here…\n</article>'}
+              value={html}
+              onChange={e => setHtml(e.target.value)}
+            />
+            <p className="text-[10px] text-slate-600 mt-0.5">
+              {html.length > 0 ? `${html.length.toLocaleString()} chars` : 'No HTML pasted yet'}
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={analyze}
+              disabled={busy || !html.trim()}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold bg-violet-600/20 border border-violet-500/40 text-violet-300 hover:bg-violet-600/30 disabled:opacity-40 transition-colors">
+              {busy
+                ? <><RotateCcw className="w-3 h-3 animate-spin" /> Analyzing…</>
+                : <><Wand2 className="w-3 h-3" /> Analyze with AI</>
+              }
+            </button>
+            {result && (
+              <button
+                type="button"
+                onClick={() => { onApply(result); setOpen(false) }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/30 transition-colors">
+                <CheckCircle2 className="w-3 h-3" /> Apply All
+              </button>
+            )}
+          </div>
+
+          {error && (
+            <div className="rounded-lg bg-red-600/10 border border-red-500/20 px-3 py-2">
+              <p className="text-[10px] text-red-400">{error}</p>
+            </div>
+          )}
+
+          {result && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Suggestions</p>
+
+              {showListMode && result.itemSelector && (
+                <div className="rounded-lg bg-[#1a1d27] border border-[#2e3350] p-2.5 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold text-amber-400">Item selector</span>
+                    <button type="button" onClick={() => onApply({ ...result, selectors: {} })}
+                      className="text-[9px] text-slate-500 hover:text-emerald-400 transition-colors">Apply</button>
+                  </div>
+                  <code className="text-[10px] text-cyan-300 font-mono block">{result.itemSelector}</code>
+                </div>
+              )}
+
+              {showListMode && (result.paginationType || result.nextPageSelector || result.urlPattern) && (
+                <div className="rounded-lg bg-[#1a1d27] border border-[#2e3350] p-2.5 space-y-1">
+                  <span className="text-[10px] font-semibold text-amber-400">Pagination</span>
+                  {result.paginationType && (
+                    <div className="flex justify-between">
+                      <span className="text-[10px] text-slate-500">Mode</span>
+                      <code className="text-[10px] text-cyan-300 font-mono">{result.paginationType}</code>
+                    </div>
+                  )}
+                  {result.urlPattern && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-[10px] text-slate-500 shrink-0">URL pattern</span>
+                      <code className="text-[10px] text-cyan-300 font-mono truncate">{result.urlPattern}</code>
+                    </div>
+                  )}
+                  {result.nextPageSelector && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-[10px] text-slate-500 shrink-0">Next selector</span>
+                      <code className="text-[10px] text-cyan-300 font-mono truncate">{result.nextPageSelector}</code>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {Object.entries(result.selectors).map(([fieldId, sel]) => {
+                const field = fields.find(f => f.id === fieldId)
+                return (
+                  <div key={fieldId} className="rounded-lg bg-[#1a1d27] border border-[#2e3350] p-2.5 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-slate-300">{field?.label ?? fieldId}</span>
+                      <button type="button"
+                        onClick={() => onApply({ selectors: { [fieldId]: sel } })}
+                        className="text-[9px] text-slate-500 hover:text-emerald-400 transition-colors">
+                        Apply
+                      </button>
+                    </div>
+                    {sel
+                      ? <code className="text-[10px] text-cyan-300 font-mono block">{sel}</code>
+                      : <span className="text-[10px] text-slate-600 italic">not found</span>
+                    }
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Browser Source ───────────────────────────────────────────────────────────
 
 export function BrowserSourcePanel({ id, data: d, update }: {
@@ -560,6 +742,18 @@ export function ListScraperPanel({ id, data: d, update }: {
         />
       </Field>
 
+      {/* AI Selector Assistant */}
+      <AISelectorAssistant
+        fields={[{ id: 'itemSelector', label: 'Item/card selector' }]}
+        showListMode
+        onApply={(s) => {
+          if (s.itemSelector)     update(id, { itemSelector: s.itemSelector })
+          if (s.paginationType)   update(id, { paginationType: s.paginationType as ListScraperData['paginationType'] })
+          if (s.nextPageSelector) update(id, { nextPageSelector: s.nextPageSelector })
+          if (s.urlPattern)       update(id, { urlPattern: s.urlPattern })
+        }}
+      />
+
       {/* Pagination mode picker */}
       <SectionTitle>Pagination</SectionTitle>
       <div className="grid grid-cols-2 gap-1.5">
@@ -752,6 +946,21 @@ export function FieldExtractorPanel({ id, data: d, update }: {
         cookies={d.cookies ?? ''}
         onChange={v => update(id, { cookies: v })}
       />
+      {/* AI Selector Assistant */}
+      <AISelectorAssistant
+        fields={fields.map(f => ({ id: f.id, label: f.label, type: f.type }))}
+        pageUrl={d.urlField === '_url' ? undefined : undefined}
+        onApply={(s) => {
+          update(id, {
+            fields: fields.map(f =>
+              s.selectors[f.id] !== undefined
+                ? { ...f, selector: s.selectors[f.id] }
+                : f
+            ),
+          })
+        }}
+      />
+
       <div className="flex items-center justify-between">
         <SectionTitle>Extraction Fields</SectionTitle>
         <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full mb-3',

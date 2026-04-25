@@ -8,8 +8,31 @@ const api = {
   resumeWorkflow: ()                => ipcRenderer.invoke('workflow:resume'),
 
   // ─── AI ───────────────────────────────────────────────────────────────────
-  generateWorkflow: (prompt: string) => ipcRenderer.invoke('ai:generateWorkflow', prompt),
-  fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetchModels', provider, apiKey),
+  generateWorkflow:  (prompt: string) => ipcRenderer.invoke('ai:generateWorkflow', prompt),
+  fetchModels:       (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetchModels', provider, apiKey),
+  analyzeSelectors:  (
+    html: string,
+    fields: Array<{ id: string; label: string; type?: string }>,
+    pageUrl?: string,
+  ) => ipcRenderer.invoke('ai:analyzeSelectors', html, fields, pageUrl),
+
+  // ─── Node test runner ─────────────────────────────────────────────────────
+  testNode: (
+    targetNodeId: string,
+    allNodes:     unknown[],
+    allEdges:     unknown[],
+  ) => ipcRenderer.invoke('node:test', targetNodeId, allNodes, allEdges),
+  stopNodeTest: () => ipcRenderer.invoke('node:testStop'),
+  onNodeTestLog: (cb: (text: string) => void) => {
+    const h = (_: unknown, v: unknown) => cb(v as string)
+    ipcRenderer.on('node:testLog', h)
+    return () => ipcRenderer.off('node:testLog', h)
+  },
+  onNodeTestComplete: (cb: (result: { success: boolean; records: unknown[]; error?: string }) => void) => {
+    const h = (_: unknown, v: unknown) => cb(v as { success: boolean; records: unknown[]; error?: string })
+    ipcRenderer.on('node:testComplete', h)
+    return () => ipcRenderer.off('node:testComplete', h)
+  },
 
   // ─── Browser engine ───────────────────────────────────────────────────────
   checkBrowserInstalled: () => ipcRenderer.invoke('browser:checkInstalled') as Promise<boolean>,

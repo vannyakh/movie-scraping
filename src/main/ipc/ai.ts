@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { useSettingsStore } from './settings-bridge'
+import { readEngineSettings } from './settings-bridge'
 
 const SYSTEM_PROMPT = `You are a workflow builder assistant for DataFlow — a visual web scraping platform.
 
@@ -172,6 +172,107 @@ async function fetchProviderModels(provider: string, apiKey: string): Promise<st
     .reverse()
 }
 
+// ─── HTML → selector analysis ─────────────────────────────────────────────────
+
+const SELECTOR_SYSTEM_PROMPT = `You are a CSS selector expert. Your job is to analyze HTML snippets and produce the best CSS selectors to extract specific fields.
+
+Rules:
+- Prefer class/id selectors over positional/nth-child selectors when possible
+- For links: return the <a> element selector (the caller will extract href)
+- For images: return the <img> element selector (the caller will extract src)
+- Selectors must be valid CSS — no XPath, no custom syntax
+- If you cannot find a match, return ""
+- For list pages, also identify the repeating "item" selector and pagination
+
+Return ONLY valid JSON (no markdown, no prose):
+{
+  "selectors": { "fieldId": "cssSelector", ... },
+  "itemSelector": "CSS selector for each repeating item card/row (for list pages)",
+  "paginationType": "next-button" | "url-pattern" | "none",
+  "nextPageSelector": "CSS selector for the next-page link/button",
+  "urlPattern": "https://example.com/page/{page}/"
+}`
+
+export interface SelectorSuggestions {
+  selectors:        Record<string, string>
+  itemSelector?:    string
+  paginationType?:  string
+  nextPageSelector?: string
+  urlPattern?:      string
+}
+
+async function analyzeHtmlForSelectors(
+  provider: string,
+  apiKey: string,
+  model: string,
+  html: string,
+  fields: Array<{ id: string; label: string; type?: string }>,
+  pageUrl?: string,
+): Promise<SelectorSuggestions> {
+  const fieldList = fields.map((f) => `- ${f.id}: "${f.label}"${f.type ? ` (type: ${f.type})` : ''}`).join('\n')
+  const prompt = [
+    pageUrl ? `Page URL: ${pageUrl}` : '',
+    'HTML snippet:',
+    '```html',
+    html.slice(0, 12_000),   // cap to avoid token overflow
+    '```',
+    '',
+    'Fields to extract:',
+    fieldList,
+    '',
+    'Analyze the HTML and return CSS selectors for each field plus list-page metadata.',
+  ].filter(Boolean).join('\n')
+
+  // Use a special system prompt just for selector analysis
+  let rawResponse: string
+  if (provider === 'anthropic') {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key':  apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1024,
+        system: SELECTOR_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    })
+    if (!res.ok) throw new Error(`Anthropic API error: ${res.status}`)
+    const json = await res.json() as { content: Array<{ text: string }> }
+    rawResponse = json.content[0]?.text ?? '{}'
+  } else {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: SELECTOR_SYSTEM_PROMPT },
+          { role: 'user',   content: prompt },
+        ],
+        response_format: { type: 'json_object' },
+        max_tokens: 1024,
+      }),
+    })
+    if (!res.ok) throw new Error(`OpenAI API error: ${res.status}`)
+    const json = await res.json() as { choices: Array<{ message: { content: string } }> }
+    rawResponse = json.choices[0]?.message?.content ?? '{}'
+  }
+
+  const clean  = extractJson(rawResponse)
+  const parsed = JSON.parse(clean) as SelectorSuggestions
+  return {
+    selectors:        parsed.selectors        ?? {},
+    itemSelector:     parsed.itemSelector     ?? undefined,
+    paginationType:   parsed.paginationType   ?? undefined,
+    nextPageSelector: parsed.nextPageSelector ?? undefined,
+    urlPattern:       parsed.urlPattern       ?? undefined,
+  }
+}
+
 // ─── IPC handler ─────────────────────────────────────────────────────────────
 export function registerAIIpc(): void {
   ipcMain.handle('ai:fetchModels', async (_event, provider: string, apiKey: string) => {
@@ -183,9 +284,29 @@ export function registerAIIpc(): void {
     }
   })
 
+  ipcMain.handle('ai:analyzeSelectors', async (
+    _event,
+    html: string,
+    fields: Array<{ id: string; label: string; type?: string }>,
+    pageUrl?: string,
+  ) => {
+    try {
+      const cfg = await readEngineSettings()
+      if (!cfg?.ai) {
+        return { __error: 'auth', message: 'AI not configured. Add an API key in Settings → AI.' }
+      }
+      const result = await analyzeHtmlForSelectors(cfg.ai.provider, cfg.ai.apiKey, cfg.ai.model, html, fields, pageUrl)
+      return result
+    } catch (err) {
+      console.error('ai:analyzeSelectors error:', err)
+      return { __error: 'unknown', message: String(err) }
+    }
+  })
+
   ipcMain.handle('ai:generateWorkflow', async (_event, prompt: string) => {
     try {
-      const ai = await useSettingsStore()
+      const cfg = await readEngineSettings()
+      const ai  = cfg.ai
       if (!ai) {
         return {
           __error: 'auth',

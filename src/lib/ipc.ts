@@ -44,6 +44,27 @@ declare global {
       // AI
       generateWorkflow: (prompt: string)             => Promise<{ nodes: unknown[]; edges: unknown[] } | { __error: string; message: string } | null>
       fetchModels:      (provider: string, apiKey: string) => Promise<string[] | null>
+      analyzeSelectors: (
+        html:    string,
+        fields:  Array<{ id: string; label: string; type?: string }>,
+        pageUrl?: string,
+      ) => Promise<{
+        selectors:        Record<string, string>
+        itemSelector?:    string
+        paginationType?:  string
+        nextPageSelector?: string
+        urlPattern?:      string
+      } | { __error: string; message: string }>
+
+      // Node test runner
+      testNode: (
+        targetNodeId: string,
+        allNodes:     unknown[],
+        allEdges:     unknown[],
+      ) => Promise<{ success: boolean; records: unknown[]; error?: string }>
+      stopNodeTest:       () => Promise<void>
+      onNodeTestLog:      (cb: (text: string) => void) => () => void
+      onNodeTestComplete: (cb: (result: { success: boolean; records: unknown[]; error?: string }) => void) => () => void
 
       // Browser engine
       checkBrowserInstalled: () => Promise<boolean>
