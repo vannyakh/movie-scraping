@@ -11,7 +11,7 @@ import { useScrapingStore } from '@/store/scrapingStore'
 const NAV = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/projects', icon: FolderOpen,      label: 'Projects'  },
-  { to: '/progress', icon: Activity,        label: 'Active Job' },
+  { to: '/task-jobs', icon: Activity,        label: 'Task Jobs' },
   { to: '/results',  icon: Database,        label: 'Results'   },
   { to: '/history',  icon: History,         label: 'History'   },
 ]

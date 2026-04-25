@@ -9,6 +9,7 @@ import ProgressPage   from '@/pages/ProgressPage'
 import Results        from '@/pages/Results'
 import HistoryPage    from '@/pages/History'
 import Settings       from '@/pages/Settings'
+import TaskJobs       from '@/pages/TaskJobs'
 
 export default function App() {
   if (!window.electronAPI) {
@@ -29,11 +30,13 @@ export default function App() {
         {/* Project detail is full-screen (no sidebar layout) */}
         <Route path="/projects/:id" element={<ProjectDetail />} />
 
+
         <Route element={<Layout />}>
           <Route index              element={<Dashboard />}     />
           <Route path="projects"    element={<Projects />}      />
           <Route path="projects/new" element={<ProjectCreate />} />
           <Route path="progress"    element={<ProgressPage />}  />
+          <Route path="task-jobs"   element={<TaskJobs />}      />
           <Route path="results"     element={<Results />}       />
           <Route path="history"     element={<HistoryPage />}   />
           <Route path="settings"    element={<Settings />}      />
