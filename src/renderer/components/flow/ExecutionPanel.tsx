@@ -84,7 +84,7 @@ export function ExecutionPanel({ onClose }: Props) {
 
   if (!activeJob) {
     return (
-      <div className="w-72 border-l border-[#1e2235] bg-[#0d0f1a] flex flex-col h-full shrink-0">
+      <div className="w-full h-full border-l border-[#1e2235] bg-[#0d0f1a] flex flex-col">
         <div className="flex items-center gap-2.5 px-4 py-3 border-b border-[#1e2235]">
           <div className="w-7 h-7 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
             <Zap className="w-3.5 h-3.5 text-indigo-400" />
@@ -140,7 +140,7 @@ export function ExecutionPanel({ onClose }: Props) {
   const nodeSteps = Object.values(nodeStatuses)
 
   return (
-    <div className="w-72 border-l border-[#1e2235] bg-[#0d0f1a] flex flex-col h-full shrink-0">
+    <div className="w-full h-full border-l border-[#1e2235] bg-[#0d0f1a] flex flex-col">
 
       {/* ── Header ── */}
       <div className={cn(

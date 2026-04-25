@@ -111,16 +111,15 @@ export function NodeConfigPanel({
   nodeId, nodes, defaultTab = 'config', onClose, onUpdateNodeData, onDeleteNode,
 }: NodeConfigPanelProps) {
   const node = nodeId ? nodes.find((n) => n.id === nodeId) : null
-  const open = !!node
   const [tab, setTab] = useState<'config' | 'preview'>(defaultTab)
 
   useEffect(() => { setTab(defaultTab) }, [nodeId, defaultTab])
   useEffect(() => {
-    if (!open) return
+    if (!node) return
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [open, onClose])
+  }, [node, onClose])
 
   const accentKey = node ? (NODE_ACCENT_KEY[node.type ?? ''] ?? 'slate') : 'slate'
   const hex       = ACCENT_HEX[accentKey] ?? '#64748b'
@@ -148,13 +147,7 @@ export function NodeConfigPanel({
   }, [node, onUpdateNodeData])
 
   return (
-    <div
-      className={cn(
-        'flex flex-col shrink-0 bg-[#12141e] border-l border-[#1e2235] overflow-hidden',
-        'transition-all duration-200 ease-out',
-      )}
-      style={{ width: open ? 348 : 0 }}
-    >
+    <div className="flex flex-col w-full h-full bg-[#12141e] border-l border-[#1e2235] overflow-hidden">
       {node && (
         <>
           {/* Header */}

@@ -37,7 +37,7 @@ export function HistoryDrawerPanel({ onClose }: Props) {
   }
 
   return (
-    <div className="w-72 border-l border-[#1e2235] bg-[#0d0f1a] flex flex-col h-full shrink-0">
+    <div className="w-full h-full border-l border-[#1e2235] bg-[#0d0f1a] flex flex-col">
 
       {/* Header */}
       <div className="flex items-center gap-2.5 px-4 py-3 border-b border-[#1e2235] shrink-0">

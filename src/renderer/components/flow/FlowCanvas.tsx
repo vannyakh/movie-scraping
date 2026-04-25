@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, useEffect, useMemo } from 'react'
+import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels'
 import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant,
   MiniMap, SelectionMode, addEdge, applyNodeChanges, applyEdgeChanges,
@@ -71,7 +72,9 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
   const navigate     = useNavigate()
   const jobStore     = useJobStore()
   const { settings } = useSettingsStore()
-  const wrapperRef   = useRef<HTMLDivElement>(null)
+  const wrapperRef    = useRef<HTMLDivElement>(null)
+  const rightPanelRef = useRef<PanelImperativeHandle | null>(null)
+  const [isDragging,  setIsDragging]  = useState(false)
 
   // Wire up IPC → job store (safe to call multiple times; each adds its own listener set)
   useIpcEvents()
@@ -86,6 +89,14 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
 
   const toggleDrawer = (panel: NonNullable<RightDrawer>) =>
     setRightDrawer((cur) => (cur === panel ? null : panel))
+
+  const isRightPanelOpen = !!(configNodeId || rightDrawer)
+
+  // Collapse / expand the resizable panel in sync with open state
+  useEffect(() => {
+    if (isRightPanelOpen) rightPanelRef.current?.expand()
+    else                  rightPanelRef.current?.collapse()
+  }, [isRightPanelOpen])
 
   // ── Undo/Redo ────────────────────────────────────────────────────────────
   const history = useFlowHistory()
@@ -486,80 +497,122 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
 
         {/* ── Body ── */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Palette */}
+          {/* Palette (fixed) */}
           <NodePalette />
 
-          {/* Canvas */}
-          <div ref={wrapperRef} className="flex-1 relative overflow-hidden">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onDrop={onDrop}
-              onDragOver={onDragOver}
-              onNodeClick={onNodeClick}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.2 }}
-              deleteKeyCode={null}
-              defaultEdgeOptions={{ type: 'custom', animated: true }}
-              panOnDrag={[1, 2]}
-              panActivationKeyCode="Space"
-              selectionOnDrag
-              selectionMode={SelectionMode.Partial}
-              minZoom={0.1}
-              maxZoom={2}
-              style={{ background: '#0d0f1a' }}
-              nodesDraggable
-              nodesConnectable
-              elementsSelectable
-            >
-              <Background
-                variant={BackgroundVariant.Dots}
-                color="#1e2235"
-                gap={24}
-                size={1.5}
-              />
-              <MiniMap
-                position="bottom-right"
-                style={{
-                  background:   '#0d0f1a',
-                  border:       '1px solid #1e2235',
-                  borderRadius: 12,
-                  marginBottom: 12,
-                  marginRight:  12,
-                }}
-                nodeColor={(n) => NODE_COLOR_MAP[n.type ?? ''] ?? '#2a2e45'}
-                maskColor="rgba(13,15,26,0.8)"
-              />
-              <FlowControls />
-            </ReactFlow>
-          </div>
+          {/* Resizable canvas + right panel */}
+          <Group
+            orientation="horizontal"
+            className="flex-1 overflow-hidden"
+            defaultLayout={{ canvas: 72, right: 28 }}
+          >
 
-          {/* Right panel — node config takes priority; execution/ai/history share the slot */}
-          {configNodeId ? (
-            <NodeConfigPanel
-              nodeId={configNodeId}
-              nodes={nodes}
-              defaultTab={configTab}
-              onClose={() => { setConfigNodeId(null); setConfigTab('config') }}
-              onUpdateNodeData={handleUpdateNodeData}
-              onDeleteNode={handleDeleteNode}
-            />
-          ) : rightDrawer === 'execution' ? (
-            <ExecutionPanel onClose={() => setRightDrawer(null)} />
-          ) : rightDrawer === 'ai' ? (
-            <AIDrawerPanel
-              onClose={() => setRightDrawer(null)}
-              onGenerate={handleAIGenerate}
-              apiConfigured={settings.aiProvider !== 'none' && !!settings.aiApiKey}
-            />
-          ) : rightDrawer === 'history' ? (
-            <HistoryDrawerPanel onClose={() => setRightDrawer(null)} />
-          ) : null}
+            {/* Canvas */}
+            <Panel id="canvas" className="relative overflow-hidden min-w-0">
+              <div ref={wrapperRef} className="w-full h-full relative">
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onDrop={onDrop}
+                  onDragOver={onDragOver}
+                  onNodeClick={onNodeClick}
+                  nodeTypes={nodeTypes}
+                  edgeTypes={edgeTypes}
+                  fitView
+                  fitViewOptions={{ padding: 0.2 }}
+                  deleteKeyCode={null}
+                  defaultEdgeOptions={{ type: 'custom', animated: true }}
+                  panOnDrag={[1, 2]}
+                  panActivationKeyCode="Space"
+                  selectionOnDrag
+                  selectionMode={SelectionMode.Partial}
+                  minZoom={0.1}
+                  maxZoom={2}
+                  style={{ background: '#0d0f1a' }}
+                  nodesDraggable
+                  nodesConnectable
+                  elementsSelectable
+                >
+                  <Background
+                    variant={BackgroundVariant.Dots}
+                    color="#1e2235"
+                    gap={24}
+                    size={1.5}
+                  />
+                  <MiniMap
+                    position="bottom-right"
+                    style={{
+                      background:   '#0d0f1a',
+                      border:       '1px solid #1e2235',
+                      borderRadius: 12,
+                      marginBottom: 12,
+                      marginRight:  12,
+                    }}
+                    nodeColor={(n) => NODE_COLOR_MAP[n.type ?? ''] ?? '#2a2e45'}
+                    maskColor="rgba(13,15,26,0.8)"
+                  />
+                  <FlowControls />
+                </ReactFlow>
+              </div>
+            </Panel>
+
+            {/* Resize handle — only when panel is open */}
+            {isRightPanelOpen && (
+              <Separator
+                onPointerDown={() => setIsDragging(true)}
+                onPointerUp={() => setIsDragging(false)}
+                className="group relative flex items-center justify-center"
+                style={{ width: 8, cursor: 'col-resize', flexShrink: 0, background: 'transparent', position: 'relative' }}
+              >
+                {/* Visible thin line */}
+                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#1e2235] group-hover:bg-indigo-500/50 transition-colors duration-150" />
+                {/* Grip dots that appear on hover */}
+                <div className="relative z-10 flex flex-col gap-[3px] opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                  {[0,1,2,3].map(i => (
+                    <div key={i} className="w-[3px] h-[3px] rounded-full bg-indigo-400/80" />
+                  ))}
+                </div>
+              </Separator>
+            )}
+
+            {/* Right drawer panel — resizable, min 22% max 50%, default 28% */}
+            <Panel
+              id="right"
+              panelRef={rightPanelRef}
+              collapsible
+              collapsedSize={0}
+              defaultSize={28}
+              minSize={22}
+              maxSize={50}
+              style={isDragging ? undefined : { transition: 'flex 0.22s cubic-bezier(0.4,0,0.2,1)' }}
+              className="overflow-hidden"
+            >
+              {configNodeId ? (
+                <NodeConfigPanel
+                  nodeId={configNodeId}
+                  nodes={nodes}
+                  defaultTab={configTab}
+                  onClose={() => { setConfigNodeId(null); setConfigTab('config') }}
+                  onUpdateNodeData={handleUpdateNodeData}
+                  onDeleteNode={handleDeleteNode}
+                />
+              ) : rightDrawer === 'execution' ? (
+                <ExecutionPanel onClose={() => setRightDrawer(null)} />
+              ) : rightDrawer === 'ai' ? (
+                <AIDrawerPanel
+                  onClose={() => setRightDrawer(null)}
+                  onGenerate={handleAIGenerate}
+                  apiConfigured={settings.aiProvider !== 'none' && !!settings.aiApiKey}
+                />
+              ) : rightDrawer === 'history' ? (
+                <HistoryDrawerPanel onClose={() => setRightDrawer(null)} />
+              ) : null}
+            </Panel>
+
+          </Group>
         </div>
       </div>
 
