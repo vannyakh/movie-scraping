@@ -7,7 +7,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html {
-  background-color: #0f1117;
+  background-color: #0d0f1a;
   color: #f1f5f9;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   font-size: 14px;
@@ -29,3 +29,31 @@ body { min-height: 100vh; }
 .flow-pan-mode .react-flow__pane          { cursor: grab     !important; }
 .flow-pan-mode .react-flow__pane.dragging { cursor: grabbing !important; }
 .react-flow__attribution { display: none; }
+
+/* ── Canvas node progress bar animation ──────────────────────────────────── */
+
+@keyframes slideProgress {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(150%);  }
+  100% { transform: translateX(350%);  }
+}
+
+/* ── React Flow handle styling ───────────────────────────────────────────── */
+
+.react-flow__handle {
+  transition: transform 0.15s, opacity 0.15s;
+}
+
+.react-flow__handle:hover {
+  transform: scale(1.4);
+}
+
+.react-flow__node:hover .react-flow__handle {
+  opacity: 1;
+}
+
+/* ── Scrollbar thin variant ──────────────────────────────────────────────── */
+
+.scrollbar-thin::-webkit-scrollbar { width: 4px; height: 4px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: #2a2e45; border-radius: 99px; }
+.scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #3a3e55; }
