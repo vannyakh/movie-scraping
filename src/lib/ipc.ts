@@ -45,6 +45,11 @@ declare global {
       generateWorkflow: (prompt: string)             => Promise<{ nodes: unknown[]; edges: unknown[] } | { __error: string; message: string } | null>
       fetchModels:      (provider: string, apiKey: string) => Promise<string[] | null>
 
+      // Browser engine
+      checkBrowserInstalled: () => Promise<boolean>
+      installBrowser:        () => Promise<{ success: boolean; error?: string }>
+      onBrowserInstallLog:   (cb: (payload: { text: string; done: boolean; success?: boolean }) => void) => () => void
+
       // Utilities
       openPath:     (filePath: string)               => Promise<void>
       selectFolder: ()                               => Promise<string | null>

@@ -6,6 +6,8 @@ import type {
   DetailField,
 } from './types'
 
+
+
 // ─── Default field list for FieldExtractor ────────────────────────────────────
 
 export const DEFAULT_DETAIL_FIELDS: DetailField[] = [
@@ -20,14 +22,20 @@ export const DEFAULT_DETAIL_FIELDS: DetailField[] = [
 // ─── Default data per node type ───────────────────────────────────────────────
 
 export const defaultNodeData: Record<string, object> = {
-  'browser-source':  { url: '', headless: true, userAgent: '', delayMs: 500, cookies: '' }          satisfies BrowserSourceData,
-  'http-source':     { url: '', method: 'GET', headers: '{}', body: '' }                            satisfies HttpSourceData,
+  'browser-source':  { url: '', headless: true, userAgent: '', delayMs: 500, cookies: '',
+                       proxyOverride: 'global', proxyUrl: '', actions: [] }                          satisfies BrowserSourceData,
+  'http-source':     { url: '', method: 'GET', headers: '{}', body: '',
+                       proxyOverride: 'global', proxyUrl: '' }                                       satisfies HttpSourceData,
   'api-source':      { url: '', method: 'GET', headers: '{}', body: '', authType: 'none',
-                       authValue: '', dataPath: '', maxPages: 1, pageParam: 'page' }                 satisfies ApiSourceData,
+                       authValue: '', dataPath: '', maxPages: 1, pageParam: 'page',
+                       proxyOverride: 'global', proxyUrl: '' }                                       satisfies ApiSourceData,
   'link-extractor':  { selector: 'a[href]', filterPattern: '', limit: 200, textSelector: '' }       satisfies LinkExtractorData,
-  'list-scraper':    { itemSelector: '', nextPageSelector: '', maxPages: 5, maxItems: 100 }          satisfies ListScraperData,
+  'list-scraper':    { itemSelector: '', paginationType: 'next-button', nextPageSelector: '',
+                       urlPattern: '', startPage: 1, scrollDelay: 1500, maxScrolls: 10,
+                       maxPages: 5, maxItems: 100 }                                                  satisfies ListScraperData,
   'field-extractor': { fields: DEFAULT_DETAIL_FIELDS.map((f) => ({ ...f })),
-                       urlField: '_url', headless: true, delayMs: 300 }                             satisfies FieldExtractorData,
+                       urlField: '_url', headless: true, delayMs: 300, cookies: '',
+                       proxyOverride: 'global', proxyUrl: '', actions: [] }                         satisfies FieldExtractorData,
   'ai-extractor':    { instruction: 'Extract the main content from this page',
                        fields: [], inputField: '_html', model: 'gpt-4o-mini' }                      satisfies AIExtractorData,
   'filter':          { conditions: [{ id: 'c1', field: '', operator: 'exists', value: '' }],

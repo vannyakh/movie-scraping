@@ -22,6 +22,14 @@ export interface AppSettings {
   aiProvider: 'openai' | 'anthropic' | 'none'
   aiApiKey:   string
   aiModel:    string
+
+  // Proxy
+  proxyEnabled:  boolean
+  proxyUrl:      string   // full URL: http://[user:pass@]host:port or socks5://…
+  proxyBypass:   string   // comma-separated hostnames to skip (e.g. localhost,127.0.0.1)
+
+  // Global cookies (shared across all browser-based nodes unless overridden per-node)
+  globalCookies: string   // standard cookie string: name=value; name2=value2
 }
 
 const DEFAULTS: AppSettings = {
@@ -37,6 +45,12 @@ const DEFAULTS: AppSettings = {
   aiProvider:  'none',
   aiApiKey:    '',
   aiModel:     'gpt-4o-mini',  // reset via Settings whenever provider changes
+
+  proxyEnabled:  false,
+  proxyUrl:      '',
+  proxyBypass:   'localhost,127.0.0.1',
+
+  globalCookies: '',
 }
 
 interface SettingsStore {

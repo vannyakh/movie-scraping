@@ -1,5 +1,10 @@
-import { useState } from 'react'
-import { Plus, X, GripVertical, FolderOpen } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import {
+  Plus, X, GripVertical, FolderOpen, ShieldCheck, Cookie,
+  MousePointerClick, Keyboard, Clock, ScrollText, ChevronDown,
+  ArrowRight, ListOrdered, Infinity, Ban, CheckCircle2, AlertCircle,
+  Layers, Tag, Hash, Brackets,
+} from 'lucide-react'
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
@@ -9,7 +14,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { inputCls, Field, Toggle, DEFAULT_DETAIL_FIELDS } from './nodes'
 import type {
-  BrowserSourceData, HttpSourceData, ApiSourceData,
+  BrowserSourceData, HttpSourceData, ApiSourceData, ProxyOverride,
+  BrowserAction, BrowserActionType, PaginationType,
   LinkExtractorData, ListScraperData, FieldExtractorData, DetailField,
   AIExtractorData, FilterData, TransformData, FileExportData, WebhookData,
 } from './nodes'
@@ -20,6 +26,317 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 mt-1">
       {children}
     </p>
+  )
+}
+
+// ─── Shared proxy picker ──────────────────────────────────────────────────────
+
+interface ProxySectionProps {
+  proxyOverride: ProxyOverride
+  proxyUrl:      string
+  onChange: (patch: { proxyOverride?: ProxyOverride; proxyUrl?: string }) => void
+}
+
+function ProxySection({ proxyOverride, proxyUrl, onChange }: ProxySectionProps) {
+  return (
+    <>
+      <div className="flex items-center gap-2 mt-1 mb-3">
+        <ShieldCheck className="w-3 h-3 text-slate-500 shrink-0" />
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Proxy</p>
+      </div>
+      <Field label="Proxy mode">
+        <select className={inputCls} value={proxyOverride}
+          onChange={e => onChange({ proxyOverride: e.target.value as ProxyOverride })}>
+          <option value="global">Use global proxy (Settings)</option>
+          <option value="none">No proxy for this node</option>
+          <option value="custom">Custom proxy URL</option>
+        </select>
+      </Field>
+      {proxyOverride === 'custom' && (
+        <Field label="Proxy URL" hint="http://[user:pass@]host:port  or  socks5://host:port">
+          <input className={inputCls}
+            placeholder="http://proxy.example.com:3128"
+            value={proxyUrl}
+            onChange={e => onChange({ proxyUrl: e.target.value })} />
+        </Field>
+      )}
+      {proxyOverride === 'global' && (
+        <p className="text-[10px] text-slate-600 -mt-2">
+          Configure proxy URL in Settings → Proxy.
+        </p>
+      )}
+    </>
+  )
+}
+
+// ─── Shared cookie field ──────────────────────────────────────────────────────
+
+interface CookieFieldProps {
+  cookies:  string
+  onChange: (v: string) => void
+}
+
+function CookieField({ cookies, onChange }: CookieFieldProps) {
+  return (
+    <>
+      <div className="flex items-center gap-2 mt-1 mb-3">
+        <Cookie className="w-3 h-3 text-slate-500 shrink-0" />
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cookies</p>
+      </div>
+      <Field
+        label="Cookie string"
+        hint="Overrides global cookies — paste from devtools: name=value; name2=value2"
+      >
+        <textarea
+          className={cn(inputCls, 'resize-none h-16 font-mono text-[10px]')}
+          placeholder="session_id=abc123; auth_token=xyz  (blank = use global cookies)"
+          value={cookies}
+          onChange={e => onChange(e.target.value)}
+        />
+      </Field>
+    </>
+  )
+}
+
+// ─── Smart CSS Selector Input ─────────────────────────────────────────────────
+
+const ELEMENT_CHIPS = ['a', 'div', 'li', 'ul', 'article', 'section', 'span', 'img', 'button', 'input', 'table', 'tr', 'td', 'h1', 'p']
+const ATTR_CHIPS    = ['.class', '#id', '[data-id]', '[href]', '[src]', ':first-child', ':nth-child(n)', ':not(x)', '> child', '+ next']
+
+function validateSelector(sel: string): boolean {
+  if (!sel.trim()) return true
+  try { document.querySelectorAll(sel); return true } catch { return false }
+}
+
+interface SelectorInputProps {
+  value:       string
+  placeholder?: string
+  onChange:    (v: string) => void
+  hint?:       string
+}
+
+function SelectorInput({ value, placeholder, onChange, hint }: SelectorInputProps) {
+  const [open, setOpen]  = useState(false)
+  const ref              = useRef<HTMLDivElement>(null)
+  const valid            = validateSelector(value)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const append = (chip: string) => {
+    const base = value.trim()
+    if (!base) { onChange(chip); return }
+    // .class / #id / pseudo / combinators append to current; tags replace
+    const isModifier = chip.startsWith('.') || chip.startsWith('#') || chip.startsWith('[') || chip.startsWith(':') || chip.startsWith('>')  || chip.startsWith('+')
+    onChange(isModifier ? base + chip : base + ' ' + chip)
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="flex items-center gap-1">
+        <div className="relative flex-1">
+          <input
+            className={cn(inputCls, 'pr-7', !valid && value.trim() && 'border-red-500/60 focus:border-red-500')}
+            placeholder={placeholder ?? 'CSS selector…'}
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            onFocus={() => setOpen(true)}
+          />
+          <span className="absolute right-2 top-1/2 -translate-y-1/2">
+            {!value.trim()
+              ? null
+              : valid
+                ? <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                : <AlertCircle  className="w-3 h-3 text-red-400" />
+            }
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          className={cn(
+            'shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-md border text-[10px] font-medium transition-colors',
+            open
+              ? 'bg-indigo-600/20 border-indigo-500/60 text-indigo-300'
+              : 'bg-[#1a1d27] border-[#2e3350] text-slate-500 hover:text-slate-300 hover:border-[#3d4470]',
+          )}
+          title="Selector helper">
+          <Tag className="w-3 h-3" />
+          <ChevronDown className={cn('w-2.5 h-2.5 transition-transform', open && 'rotate-180')} />
+        </button>
+      </div>
+
+      {hint && !open && (
+        <p className="text-[10px] text-slate-600 mt-1">{hint}</p>
+      )}
+
+      {open && (
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-[#13151f] border border-[#2e3350] rounded-xl shadow-2xl p-3 space-y-2.5">
+          {/* Element tags */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Layers className="w-3 h-3 text-slate-500" />
+              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Elements</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {ELEMENT_CHIPS.map(chip => (
+                <button key={chip} type="button" onClick={() => { append(chip); setOpen(false) }}
+                  className="px-1.5 py-0.5 rounded bg-[#1a1d27] border border-[#2e3350] text-[10px] font-mono text-cyan-300 hover:bg-cyan-600/10 hover:border-cyan-500/40 transition-colors">
+                  {chip}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Attribute / combinator modifiers */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Brackets className="w-3 h-3 text-slate-500" />
+              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Modifiers</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {ATTR_CHIPS.map(chip => (
+                <button key={chip} type="button" onClick={() => append(chip)}
+                  className="px-1.5 py-0.5 rounded bg-[#1a1d27] border border-[#2e3350] text-[10px] font-mono text-amber-300 hover:bg-amber-600/10 hover:border-amber-500/40 transition-colors">
+                  {chip}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom class/id shortcut */}
+          <div className="flex gap-2 pt-1 border-t border-[#2e3350]">
+            <div className="flex items-center gap-1 flex-1">
+              <Hash className="w-3 h-3 text-slate-600 shrink-0" />
+              <input className={cn(inputCls, 'text-[10px] py-1')} placeholder="type an id…"
+                onChange={e => { if (e.target.value) { append(`#${e.target.value}`); e.target.value = '' } }} />
+            </div>
+            <div className="flex items-center gap-1 flex-1">
+              <span className="text-slate-600 text-xs font-bold shrink-0">.</span>
+              <input className={cn(inputCls, 'text-[10px] py-1')} placeholder="type a class…"
+                onChange={e => { if (e.target.value) { append(`.${e.target.value}`); e.target.value = '' } }} />
+            </div>
+          </div>
+          {!valid && value.trim() && (
+            <p className="text-[10px] text-red-400 flex items-center gap-1">
+              <AlertCircle className="w-3 h-3" /> Invalid CSS selector
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Browser Action Sequence Builder ─────────────────────────────────────────
+
+const ACTION_META: Record<BrowserActionType, { label: string; icon: React.ReactNode; hasSelector: boolean; valuePlaceholder?: string; valueLabel?: string }> = {
+  click:      { label: 'Click',      icon: <MousePointerClick className="w-3 h-3" />, hasSelector: true,  valueLabel: undefined },
+  hover:      { label: 'Hover',      icon: <MousePointerClick className="w-3 h-3" />, hasSelector: true },
+  type:       { label: 'Type text',  icon: <Keyboard className="w-3 h-3" />,          hasSelector: true,  valuePlaceholder: 'Text to type…', valueLabel: 'Text' },
+  select:     { label: 'Select',     icon: <ChevronDown className="w-3 h-3" />,       hasSelector: true,  valuePlaceholder: 'Option value…',  valueLabel: 'Value' },
+  wait:       { label: 'Wait (ms)',  icon: <Clock className="w-3 h-3" />,             hasSelector: false, valuePlaceholder: '1500',            valueLabel: 'Milliseconds' },
+  scroll:     { label: 'Scroll to',  icon: <ScrollText className="w-3 h-3" />,        hasSelector: true,  valuePlaceholder: 'px or "bottom"',  valueLabel: 'Amount' },
+  screenshot: { label: 'Screenshot', icon: <Layers className="w-3 h-3" />,            hasSelector: false },
+}
+
+function SortableActionRow({ action, onUpdate, onRemove }: {
+  action: BrowserAction
+  onUpdate: (p: Partial<BrowserAction>) => void
+  onRemove: () => void
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: action.id })
+  const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 10 : undefined }
+  const meta  = ACTION_META[action.type]
+
+  return (
+    <div ref={setNodeRef} style={style}
+      className={cn(
+        'rounded-lg border p-2.5 space-y-2 transition-colors',
+        isDragging
+          ? 'opacity-50 border-indigo-500/60 bg-indigo-600/10 shadow-lg'
+          : 'bg-[#1a1d27] border-[#2e3350] hover:border-[#3d4470]',
+      )}>
+      <div className="flex items-center gap-1.5">
+        <button ref={setActivatorNodeRef} {...attributes} {...listeners}
+          className="shrink-0 p-0.5 text-slate-500 hover:text-slate-300 cursor-grab active:cursor-grabbing touch-none focus:outline-none" tabIndex={-1}>
+          <GripVertical className="w-3 h-3" />
+        </button>
+        <span className="text-slate-500">{meta.icon}</span>
+        <select className={cn(inputCls, 'flex-1 text-[10px]')} value={action.type}
+          onChange={e => onUpdate({ type: e.target.value as BrowserActionType, selector: '', value: '' })}>
+          {(Object.keys(ACTION_META) as BrowserActionType[]).map(t => (
+            <option key={t} value={t}>{ACTION_META[t].label}</option>
+          ))}
+        </select>
+        <button onClick={onRemove}
+          className="shrink-0 p-0.5 text-slate-600 hover:text-red-400 transition-colors">
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+
+      {meta.hasSelector && (
+        <SelectorInput
+          value={action.selector ?? ''}
+          placeholder="CSS selector…"
+          onChange={v => onUpdate({ selector: v })}
+        />
+      )}
+
+      {(meta.valueLabel ?? meta.valuePlaceholder) && (
+        <input className={cn(inputCls, 'text-[10px]')}
+          placeholder={meta.valuePlaceholder ?? ''}
+          value={action.value ?? ''}
+          onChange={e => onUpdate({ value: e.target.value })} />
+      )}
+    </div>
+  )
+}
+
+function ActionSequenceBuilder({ actions, onChange }: {
+  actions:  BrowserAction[]
+  onChange: (a: BrowserAction[]) => void
+}) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+
+  const addAction = () =>
+    onChange([...actions, { id: `act-${Date.now()}`, type: 'click', selector: '', value: '' }])
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (over && active.id !== over.id) {
+      const o = actions.findIndex(a => a.id === active.id)
+      const n = actions.findIndex(a => a.id === over.id)
+      onChange(arrayMove(actions, o, n))
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {actions.length === 0 && (
+        <p className="text-[10px] text-slate-600 text-center py-2">
+          No actions — scraping starts immediately after page loads.
+        </p>
+      )}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={actions.map(a => a.id)} strategy={verticalListSortingStrategy}>
+          <div className="space-y-1.5">
+            {actions.map(a => (
+              <SortableActionRow key={a.id} action={a}
+                onUpdate={p => onChange(actions.map(ai => ai.id === a.id ? { ...ai, ...p } : ai))}
+                onRemove={() => onChange(actions.filter(ai => ai.id !== a.id))} />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+      <button onClick={addAction}
+        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-indigo-400 border border-dashed border-indigo-600/30 hover:border-indigo-500/60 hover:bg-indigo-600/5 transition-colors">
+        <Plus className="w-3.5 h-3.5" /> Add Action
+      </button>
+    </div>
   )
 }
 
@@ -40,6 +357,7 @@ export function BrowserSourcePanel({ id, data: d, update }: {
         <input className={inputCls} placeholder="Mozilla/5.0 …" value={d.userAgent}
           onChange={e => update(id, { userAgent: e.target.value })} />
       </Field>
+
       <SectionTitle>Browser</SectionTitle>
       <Field label="Delay between requests (ms)">
         <input type="number" className={inputCls} value={d.delayMs} min={0} step={100}
@@ -52,13 +370,30 @@ export function BrowserSourcePanel({ id, data: d, update }: {
         </div>
         <Toggle value={d.headless} onChange={v => update(id, { headless: v })} />
       </div>
-      <SectionTitle>Cookies (optional)</SectionTitle>
-      <Field label="Cookie string" hint="Paste from browser devtools — name=value; name2=value2">
-        <textarea className={cn(inputCls, 'resize-none h-16 font-mono text-[10px]')}
-          placeholder="session_id=abc123; auth_token=xyz"
-          value={d.cookies ?? ''}
-          onChange={e => update(id, { cookies: e.target.value })} />
-      </Field>
+
+      {/* Pre-scrape actions */}
+      <div className="flex items-center gap-2 mt-1 mb-2">
+        <MousePointerClick className="w-3 h-3 text-slate-500 shrink-0" />
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Page Actions</p>
+        <span className="ml-auto text-[10px] text-slate-600">{(d.actions ?? []).length} step{(d.actions ?? []).length !== 1 ? 's' : ''}</span>
+      </div>
+      <p className="text-[10px] text-slate-600 -mt-2">
+        Runs before scraping — accept cookie banners, click "Load more", fill login forms, etc.
+      </p>
+      <ActionSequenceBuilder
+        actions={d.actions ?? []}
+        onChange={a => update(id, { actions: a })}
+      />
+
+      <ProxySection
+        proxyOverride={d.proxyOverride ?? 'global'}
+        proxyUrl={d.proxyUrl ?? ''}
+        onChange={p => update(id, p as Partial<BrowserSourceData>)}
+      />
+      <CookieField
+        cookies={d.cookies ?? ''}
+        onChange={v => update(id, { cookies: v })}
+      />
     </div>
   )
 }
@@ -91,6 +426,11 @@ export function HttpSourcePanel({ id, data: d, update }: {
             value={d.body} onChange={e => update(id, { body: e.target.value })} />
         </Field>
       )}
+      <ProxySection
+        proxyOverride={d.proxyOverride ?? 'global'}
+        proxyUrl={d.proxyUrl ?? ''}
+        onChange={p => update(id, p as Partial<HttpSourceData>)}
+      />
     </div>
   )
 }
@@ -148,6 +488,11 @@ export function ApiSourcePanel({ id, data: d, update }: {
             onChange={e => update(id, { maxPages: +e.target.value })} />
         </Field>
       </div>
+      <ProxySection
+        proxyOverride={d.proxyOverride ?? 'global'}
+        proxyUrl={d.proxyUrl ?? ''}
+        onChange={p => update(id, p as Partial<ApiSourceData>)}
+      />
     </div>
   )
 }
@@ -161,16 +506,22 @@ export function LinkExtractorPanel({ id, data: d, update }: {
   return (
     <div className="space-y-4">
       <SectionTitle>Selection</SectionTitle>
-      <Field label="CSS Selector" hint="Selects anchor elements to extract">
-        <input className={inputCls} placeholder="a[href], nav a, .product-link" value={d.selector}
-          onChange={e => update(id, { selector: e.target.value })} />
+      <Field label="Link selector" hint="Selects anchor elements to extract">
+        <SelectorInput
+          value={d.selector}
+          placeholder="a[href], nav a, .product-link"
+          onChange={v => update(id, { selector: v })}
+        />
       </Field>
-      <Field label="Text selector" hint="Optional: selector for link label text">
-        <input className={inputCls} placeholder=".title, h3" value={d.textSelector}
-          onChange={e => update(id, { textSelector: e.target.value })} />
+      <Field label="Text selector" hint="Optional: selector for the link label">
+        <SelectorInput
+          value={d.textSelector}
+          placeholder=".title, h3"
+          onChange={v => update(id, { textSelector: v })}
+        />
       </Field>
       <SectionTitle>Filtering</SectionTitle>
-      <Field label="URL filter pattern" hint="Regex — only keep matching URLs">
+      <Field label="URL filter (regex)" hint="Only keep URLs matching this pattern">
         <input className={inputCls} placeholder="/product/, /item/" value={d.filterPattern}
           onChange={e => update(id, { filterPattern: e.target.value })} />
       </Field>
@@ -184,27 +535,95 @@ export function LinkExtractorPanel({ id, data: d, update }: {
 
 // ─── List Scraper ─────────────────────────────────────────────────────────────
 
+const PAGINATION_MODES: Array<{ value: PaginationType; label: string; icon: React.ReactNode; desc: string }> = [
+  { value: 'none',           label: 'Single page',    icon: <Ban className="w-3.5 h-3.5" />,        desc: 'Scrape one page only' },
+  { value: 'next-button',    label: 'Next button',    icon: <ArrowRight className="w-3.5 h-3.5" />, desc: 'Click a "Next" link/button' },
+  { value: 'url-pattern',    label: 'URL pattern',    icon: <ListOrdered className="w-3.5 h-3.5" />,desc: 'Increment page number in URL' },
+  { value: 'infinite-scroll',label: 'Infinite scroll',icon: <Infinity className="w-3.5 h-3.5" />,   desc: 'Scroll down to load more' },
+]
+
 export function ListScraperPanel({ id, data: d, update }: {
   id: string; data: ListScraperData
   update: (id: string, patch: Partial<ListScraperData>) => void
 }) {
+  const mode = d.paginationType ?? 'next-button'
+
   return (
     <div className="space-y-4">
-      <SectionTitle>Selectors</SectionTitle>
-      <Field label="Item selector" hint="CSS selector for each list item / card">
-        <input className={inputCls} placeholder=".product-card a, li.item a" value={d.itemSelector}
-          onChange={e => update(id, { itemSelector: e.target.value })} />
+      <SectionTitle>Item Selector</SectionTitle>
+      <Field label="Item selector" hint="CSS selector that matches each list item / card">
+        <SelectorInput
+          value={d.itemSelector}
+          placeholder=".product-card, li.item, article"
+          onChange={v => update(id, { itemSelector: v })}
+        />
       </Field>
-      <Field label="Next page selector" hint="'Next' button or page link">
-        <input className={inputCls} placeholder="a.next, .pagination-next" value={d.nextPageSelector}
-          onChange={e => update(id, { nextPageSelector: e.target.value })} />
-      </Field>
+
+      {/* Pagination mode picker */}
+      <SectionTitle>Pagination</SectionTitle>
+      <div className="grid grid-cols-2 gap-1.5">
+        {PAGINATION_MODES.map(m => (
+          <button key={m.value} type="button"
+            onClick={() => update(id, { paginationType: m.value })}
+            className={cn(
+              'flex flex-col items-start gap-0.5 px-2.5 py-2 rounded-lg border text-left transition-colors',
+              mode === m.value
+                ? 'bg-indigo-600/15 border-indigo-500/50 text-indigo-300'
+                : 'bg-[#1a1d27] border-[#2e3350] text-slate-400 hover:border-[#3d4470] hover:text-slate-300',
+            )}>
+            <span className="flex items-center gap-1.5 text-xs font-semibold">
+              {m.icon} {m.label}
+            </span>
+            <span className="text-[10px] opacity-70">{m.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Mode-specific config */}
+      {mode === 'next-button' && (
+        <Field label="Next page selector" hint="Selector for the 'Next' button or link">
+          <SelectorInput
+            value={d.nextPageSelector}
+            placeholder="a.next, .pagination-next, button[aria-label='Next']"
+            onChange={v => update(id, { nextPageSelector: v })}
+          />
+        </Field>
+      )}
+
+      {mode === 'url-pattern' && (
+        <>
+          <Field label="URL pattern" hint="Use {page} as the page number placeholder">
+            <input className={inputCls} placeholder="https://site.com/products?page={page}"
+              value={d.urlPattern} onChange={e => update(id, { urlPattern: e.target.value })} />
+          </Field>
+          <Field label="Start page number">
+            <input type="number" className={inputCls} value={d.startPage ?? 1} min={0}
+              onChange={e => update(id, { startPage: +e.target.value })} />
+          </Field>
+        </>
+      )}
+
+      {mode === 'infinite-scroll' && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Scroll delay (ms)" hint="Wait after each scroll">
+            <input type="number" className={inputCls} value={d.scrollDelay ?? 1500} min={200} step={100}
+              onChange={e => update(id, { scrollDelay: +e.target.value })} />
+          </Field>
+          <Field label="Max scrolls">
+            <input type="number" className={inputCls} value={d.maxScrolls ?? 10} min={1}
+              onChange={e => update(id, { maxScrolls: +e.target.value })} />
+          </Field>
+        </div>
+      )}
+
       <SectionTitle>Limits</SectionTitle>
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Max pages">
-          <input type="number" className={inputCls} value={d.maxPages} min={1}
-            onChange={e => update(id, { maxPages: +e.target.value })} />
-        </Field>
+        {mode !== 'none' && (
+          <Field label="Max pages">
+            <input type="number" className={inputCls} value={d.maxPages} min={1}
+              onChange={e => update(id, { maxPages: +e.target.value })} />
+          </Field>
+        )}
         <Field label="Max items">
           <input type="number" className={inputCls} value={d.maxItems} min={1}
             onChange={e => update(id, { maxItems: +e.target.value })} />
@@ -249,8 +668,11 @@ function SortableFieldRow({
           <X className="w-3 h-3" />
         </button>
       </div>
-      <input className={inputCls} placeholder={`CSS selector for ${field.label.toLowerCase()}…`}
-        value={field.selector} onChange={e => onUpdate({ selector: e.target.value })} />
+      <SelectorInput
+        value={field.selector}
+        placeholder={`CSS selector for ${field.label.toLowerCase()}…`}
+        onChange={v => onUpdate({ selector: v })}
+      />
       {field.type === 'attr' && (
         <input className={inputCls} placeholder="attr name (e.g. href, src, data-id)"
           value={field.attrName} onChange={e => onUpdate({ attrName: e.target.value })} />
@@ -306,6 +728,29 @@ export function FieldExtractorPanel({ id, data: d, update }: {
         <input className={inputCls} placeholder="_url" value={d.urlField}
           onChange={e => update(id, { urlField: e.target.value })} />
       </Field>
+      {/* Per-page actions */}
+      <div className="flex items-center gap-2 mt-1 mb-2">
+        <MousePointerClick className="w-3 h-3 text-slate-500 shrink-0" />
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Page Actions</p>
+        <span className="ml-auto text-[10px] text-slate-600">{(d.actions ?? []).length} step{(d.actions ?? []).length !== 1 ? 's' : ''}</span>
+      </div>
+      <p className="text-[10px] text-slate-600 -mt-2">
+        Runs on each detail page before extracting fields — dismiss modals, expand sections, etc.
+      </p>
+      <ActionSequenceBuilder
+        actions={d.actions ?? []}
+        onChange={a => update(id, { actions: a })}
+      />
+
+      <ProxySection
+        proxyOverride={d.proxyOverride ?? 'global'}
+        proxyUrl={d.proxyUrl ?? ''}
+        onChange={p => update(id, p as Partial<FieldExtractorData>)}
+      />
+      <CookieField
+        cookies={d.cookies ?? ''}
+        onChange={v => update(id, { cookies: v })}
+      />
       <div className="flex items-center justify-between">
         <SectionTitle>Extraction Fields</SectionTitle>
         <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full mb-3',

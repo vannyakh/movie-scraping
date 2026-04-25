@@ -1,8 +1,9 @@
 import { toast } from 'sonner'
 import {
   RotateCcw, FolderOpen, Monitor, Clock, Download, Bot, Key, Eye, EyeOff,
+  Globe, CheckCircle2, AlertCircle, Loader2, ShieldCheck, Cookie,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
 
@@ -52,6 +53,107 @@ function NumberField({ value, onChange, min = 0, max, step = 1, unit }: {
   )
 }
 
+// ─── Browser engine install panel ────────────────────────────────────────────
+
+function BrowserEngineSection() {
+  type InstallState = 'idle' | 'installing' | 'done_ok' | 'done_err'
+
+  const [installed,    setInstalled]    = useState<boolean | null>(null)
+  const [installState, setInstallState] = useState<InstallState>('idle')
+  const [logs,         setLogs]         = useState<string[]>([])
+  const logRef = useRef<HTMLDivElement>(null)
+
+  // Check on mount
+  useEffect(() => {
+    window.electronAPI.checkBrowserInstalled().then(setInstalled)
+  }, [])
+
+  // Auto-scroll log
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
+  }, [logs])
+
+  const handleInstall = async () => {
+    setInstallState('installing')
+    setLogs([])
+
+    const unsub = window.electronAPI.onBrowserInstallLog(({ text, done, success }) => {
+      setLogs((prev) => [...prev, text])
+      if (done) {
+        unsub()
+        setInstallState(success ? 'done_ok' : 'done_err')
+        setInstalled(success ?? false)
+        if (success) toast.success('Chromium installed successfully!')
+        else         toast.error('Chromium installation failed.')
+      }
+    })
+
+    await window.electronAPI.installBrowser()
+  }
+
+  const isInstalling = installState === 'installing'
+
+  return (
+    <Section icon={Globe} title="Browser Engine">
+      {/* Status row */}
+      <Row label="Chromium status" hint="Required for browser-based scraping nodes">
+        {installed === null ? (
+          <span className="flex items-center gap-1.5 text-xs text-slate-500">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking…
+          </span>
+        ) : installed ? (
+          <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Installed
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5 text-xs text-amber-400">
+            <AlertCircle className="w-3.5 h-3.5" /> Not installed
+          </span>
+        )}
+      </Row>
+
+      {/* Install / re-install button */}
+      <Row
+        label={installed ? 'Re-install / update Chromium' : 'Install Chromium'}
+        hint={installed ? 'Downloads the latest compatible version' : 'Required to run workflows — ~150 MB download'}
+      >
+        <button
+          onClick={handleInstall}
+          disabled={isInstalling}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all',
+            installed
+              ? 'bg-[#21253a] border border-[#2e3350] text-slate-300 hover:text-white hover:border-indigo-500/50'
+              : 'bg-indigo-600 hover:bg-indigo-500 text-white',
+            'disabled:opacity-50 disabled:cursor-not-allowed',
+          )}
+        >
+          {isInstalling
+            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Installing…</>
+            : <><Download className="w-3.5 h-3.5" /> {installed ? 'Reinstall' : 'Install Chromium'}</>}
+        </button>
+      </Row>
+
+      {/* Live log output */}
+      {logs.length > 0 && (
+        <div
+          ref={logRef}
+          className={cn(
+            'rounded-xl border text-[10px] font-mono leading-relaxed p-3 overflow-y-auto max-h-40 whitespace-pre-wrap',
+            installState === 'done_ok'  ? 'bg-emerald-950/30 border-emerald-500/20 text-emerald-300' :
+            installState === 'done_err' ? 'bg-red-950/30 border-red-500/20 text-red-300' :
+                                         'bg-[#0d0f1a] border-[#1e2235] text-slate-400',
+          )}
+        >
+          {logs.join('')}
+        </div>
+      )}
+    </Section>
+  )
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export default function Settings() {
   const { settings, update, reset } = useSettingsStore()
   const [showApiKey, setShowApiKey] = useState(false)
@@ -77,8 +179,69 @@ export default function Settings() {
       </div>
 
       <div className="flex flex-col gap-5">
-        {/* Browser */}
-        <Section icon={Monitor} title="Browser">
+        {/* Browser Engine */}
+        <BrowserEngineSection />
+
+        {/* Proxy */}
+        <Section icon={ShieldCheck} title="Proxy">
+          <div className="rounded-lg bg-indigo-600/8 border border-indigo-500/20 px-3 py-2.5 mb-1">
+            <p className="text-[11px] text-indigo-300 leading-relaxed">
+              Global proxy applies to all browser and HTTP nodes unless overridden per-node.
+              Format: <span className="font-mono text-indigo-200">http://[user:pass@]host:port</span> or <span className="font-mono text-indigo-200">socks5://host:port</span>
+            </p>
+          </div>
+          <Row label="Enable proxy" hint="Route all scraping traffic through the proxy">
+            <Toggle checked={settings.proxyEnabled} onChange={v => update({ proxyEnabled: v })} />
+          </Row>
+          {settings.proxyEnabled && (
+            <>
+              <Row label="Proxy URL" hint="e.g. http://user:pass@proxy.host:3128">
+                <input
+                  value={settings.proxyUrl}
+                  onChange={e => update({ proxyUrl: e.target.value })}
+                  className="w-64 bg-[#0f1117] border border-[#2e3350] text-slate-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500 font-mono"
+                  placeholder="http://proxy.example.com:3128"
+                />
+              </Row>
+              <Row label="Bypass hosts" hint="Comma-separated hostnames to skip proxy">
+                <input
+                  value={settings.proxyBypass}
+                  onChange={e => update({ proxyBypass: e.target.value })}
+                  className="w-64 bg-[#0f1117] border border-[#2e3350] text-slate-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500 font-mono"
+                  placeholder="localhost,127.0.0.1"
+                />
+              </Row>
+            </>
+          )}
+        </Section>
+
+        {/* Global Cookies */}
+        <Section icon={Cookie} title="Global Cookies">
+          <div className="rounded-lg bg-amber-600/8 border border-amber-500/20 px-3 py-2.5 mb-1">
+            <p className="text-[11px] text-amber-300 leading-relaxed">
+              Cookies set here are shared across all browser-based nodes. Per-node cookies override this.
+              Paste from browser DevTools → Application → Cookies.
+            </p>
+          </div>
+          <Row label="Cookie string">
+            <div className="w-full" />
+          </Row>
+          <textarea
+            value={settings.globalCookies}
+            onChange={e => update({ globalCookies: e.target.value })}
+            rows={4}
+            className="w-full bg-[#0f1117] border border-[#2e3350] text-slate-300 rounded-lg px-3 py-2 text-xs outline-none focus:border-amber-500/60 font-mono resize-none placeholder-slate-600"
+            placeholder="session_id=abc123; auth_token=xyz789; csrf_token=def456"
+          />
+          {settings.globalCookies && (
+            <p className="text-[10px] text-slate-600">
+              {settings.globalCookies.split(';').filter(s => s.trim()).length} cookie{settings.globalCookies.split(';').filter(s => s.trim()).length !== 1 ? 's' : ''} configured
+            </p>
+          )}
+        </Section>
+
+        {/* Browser defaults */}
+        <Section icon={Monitor} title="Browser Defaults">
           <Row label="Headless mode" hint="Run Chromium without a visible window">
             <Toggle checked={settings.headless} onChange={(v) => update({ headless: v })} />
           </Row>

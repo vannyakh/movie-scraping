@@ -65,6 +65,112 @@ function TBtn({
     </button>
   )
 }
+function sanitizeNodeData(type: string, raw: Record<string, unknown>): Record<string, unknown> {
+  // Merge with defaults so every field exists
+  const d: Record<string, unknown> = { ...(defaultNodeData[type] ?? {}), ...raw }
+  if (['http-source', 'api-source', 'webhook'].includes(type)) {
+    if (typeof d.headers === 'object' && d.headers !== null) {
+      d.headers = JSON.stringify(d.headers)
+    }
+    if (typeof d.headers !== 'string') d.headers = '{}'
+  }
+
+  switch (type) {
+    case 'transform': {
+      // omit MUST be a comma-separated string — AI often returns string[]
+      if (Array.isArray(d.omit)) d.omit = (d.omit as string[]).join(',')
+      if (typeof d.omit !== 'string') d.omit = ''
+      if (!Array.isArray(d.renames)) d.renames = []
+      if (!Array.isArray(d.computed)) d.computed = []
+      break
+    }
+    case 'filter': {
+      if (!Array.isArray(d.conditions)) d.conditions = []
+      d.conditions = (d.conditions as unknown[]).map((c, i) => {
+        const o = (typeof c === 'object' && c !== null ? c : {}) as Record<string, unknown>
+        return {
+          id:       String(o.id       ?? `c${i + 1}`),
+          field:    String(o.field    ?? ''),
+          operator: String(o.operator ?? 'exists'),
+          value:    String(o.value    ?? ''),
+        }
+      })
+      if (d.logic !== 'AND' && d.logic !== 'OR') d.logic = 'AND'
+      break
+    }
+    case 'link-extractor': {
+      if (typeof d.limit !== 'number') d.limit = Number(d.limit) || 200
+      break
+    }
+    case 'browser-source': {
+      if (typeof d.delayMs       !== 'number')  d.delayMs       = Number(d.delayMs) || 500
+      if (typeof d.headless      !== 'boolean') d.headless      = d.headless !== false
+      if (typeof d.cookies       !== 'string')  d.cookies       = ''
+      if (!['global','none','custom'].includes(d.proxyOverride as string)) d.proxyOverride = 'global'
+      if (typeof d.proxyUrl      !== 'string')  d.proxyUrl      = ''
+      if (!Array.isArray(d.actions))            d.actions       = []
+      break
+    }
+    case 'http-source': {
+      if (!['global','none','custom'].includes(d.proxyOverride as string)) d.proxyOverride = 'global'
+      if (typeof d.proxyUrl !== 'string') d.proxyUrl = ''
+      break
+    }
+    case 'api-source': {
+      if (typeof d.maxPages !== 'number') d.maxPages = Number(d.maxPages) || 1
+      if (!['global','none','custom'].includes(d.proxyOverride as string)) d.proxyOverride = 'global'
+      if (typeof d.proxyUrl !== 'string') d.proxyUrl = ''
+      break
+    }
+    case 'list-scraper': {
+      if (typeof d.maxPages !== 'number') d.maxPages = Number(d.maxPages) || 5
+      if (typeof d.maxItems !== 'number') d.maxItems = Number(d.maxItems) || 100
+      if (!['none','next-button','url-pattern','infinite-scroll'].includes(d.paginationType as string))
+        d.paginationType = 'next-button'
+      if (typeof d.nextPageSelector !== 'string') d.nextPageSelector = ''
+      if (typeof d.urlPattern       !== 'string') d.urlPattern       = ''
+      if (typeof d.startPage        !== 'number') d.startPage        = 1
+      if (typeof d.scrollDelay      !== 'number') d.scrollDelay      = 1500
+      if (typeof d.maxScrolls       !== 'number') d.maxScrolls       = 10
+      break
+    }
+    case 'field-extractor': {
+      if (!Array.isArray(d.fields) || (d.fields as unknown[]).length === 0) {
+        d.fields = DEFAULT_DETAIL_FIELDS.map((f) => ({ ...f }))
+      }
+      if (typeof d.urlField  !== 'string')  d.urlField  = '_url'
+      if (typeof d.delayMs   !== 'number')  d.delayMs   = Number(d.delayMs) || 300
+      if (typeof d.headless  !== 'boolean') d.headless  = d.headless !== false
+      if (typeof d.cookies   !== 'string')  d.cookies   = ''
+      if (!['global','none','custom'].includes(d.proxyOverride as string)) d.proxyOverride = 'global'
+      if (typeof d.proxyUrl  !== 'string')  d.proxyUrl  = ''
+      if (!Array.isArray(d.actions))        d.actions   = []
+      break
+    }
+    case 'ai-extractor': {
+      if (!Array.isArray(d.fields))         d.fields      = []
+      if (typeof d.instruction !== 'string') d.instruction = 'Extract the main content'
+      if (typeof d.inputField  !== 'string') d.inputField  = '_html'
+      if (typeof d.model       !== 'string') d.model       = 'gpt-4o-mini'
+      break
+    }
+    case 'file-export': {
+      if (typeof d.exportJson  !== 'boolean') d.exportJson  = Boolean(d.exportJson)
+      if (typeof d.exportExcel !== 'boolean') d.exportExcel = Boolean(d.exportExcel)
+      if (typeof d.exportCsv   !== 'boolean') d.exportCsv   = Boolean(d.exportCsv)
+      // Always have at least one format enabled
+      if (!d.exportJson && !d.exportExcel && !d.exportCsv) d.exportJson = true
+      if (typeof d.filename !== 'string') d.filename = 'output'
+      break
+    }
+    case 'webhook': {
+      if (typeof d.batchSize !== 'number') d.batchSize = Number(d.batchSize) || 100
+      break
+    }
+  }
+
+  return d
+}
 
 // ─── Inner canvas ─────────────────────────────────────────────────────────────
 
@@ -267,18 +373,44 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
       const result = await window.electronAPI.generateWorkflow(prompt)
       if (!result) return 'AI could not generate a workflow. Please try again.'
       if ('__error' in result) return result.message
-      history.push(currentSnap())
-      setNodes((result.nodes as Node[]).map((n, i) => ({
+
+      // Normalise nodes: ensure position & data exist, sanitize type mismatches
+      const newNodes = (result.nodes as Node[]).map((n, i) => ({
         ...n,
         position: n.position ?? { x: i * 340, y: 100 },
-      })))
-      setEdges(result.edges as Edge[])
+        data:     sanitizeNodeData(n.type ?? '', (n.data as Record<string, unknown>) ?? {}),
+      }))
+
+      // Normalise edges: our renderer requires type='custom' + animated
+      const newEdges = (result.edges as Edge[]).map((e, i) => ({
+        ...e,
+        id:       e.id ?? `ai-edge-${i}`,
+        type:     'custom',
+        animated: true,
+      }))
+
+      history.push(currentSnap())
+      setNodes(newNodes)
+      setEdges(newEdges)
+
+      // Save immediately — don't rely on the 3-second auto-save timer
+      if (onSave) {
+        if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+        onSave(newNodes, newEdges)
+        setIsDirty(false)
+      }
+
+      // Refit viewport so the generated nodes are visible (not off-screen / blank)
+      requestAnimationFrame(() => {
+        setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 50)
+      })
+
       toast.success('Workflow generated by AI!')
       return null
     } catch {
       return 'AI generation failed. Please try again.'
     }
-  }, [settings, history, currentSnap])
+  }, [settings, history, currentSnap, onSave, fitView])
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
@@ -606,6 +738,7 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
                   onClose={() => setRightDrawer(null)}
                   onGenerate={handleAIGenerate}
                   apiConfigured={settings.aiProvider !== 'none' && !!settings.aiApiKey}
+                  projectId={projectId}
                 />
               ) : rightDrawer === 'history' ? (
                 <HistoryDrawerPanel onClose={() => setRightDrawer(null)} />

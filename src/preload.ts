@@ -11,6 +11,15 @@ const api = {
   generateWorkflow: (prompt: string) => ipcRenderer.invoke('ai:generateWorkflow', prompt),
   fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetchModels', provider, apiKey),
 
+  // ─── Browser engine ───────────────────────────────────────────────────────
+  checkBrowserInstalled: () => ipcRenderer.invoke('browser:checkInstalled') as Promise<boolean>,
+  installBrowser: () => ipcRenderer.invoke('browser:install') as Promise<{ success: boolean; error?: string }>,
+  onBrowserInstallLog: (cb: (payload: { text: string; done: boolean; success?: boolean }) => void) => {
+    const h = (_: unknown, v: unknown) => cb(v as { text: string; done: boolean; success?: boolean })
+    ipcRenderer.on('browser:installLog', h)
+    return () => ipcRenderer.off('browser:installLog', h)
+  },
+
   // ─── Utilities ────────────────────────────────────────────────────────────
   openPath:     (p: string)                    => ipcRenderer.invoke('open:path', p),
   selectFolder: ()                             => ipcRenderer.invoke('dialog:selectFolder'),

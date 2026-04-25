@@ -5,7 +5,8 @@
 
 // Types
 export type {
-  BrowserSourceData, HttpSourceData, ApiSourceData,
+  BrowserSourceData, HttpSourceData, ApiSourceData, ProxyOverride,
+  BrowserAction, BrowserActionType, PaginationType,
   LinkExtractorData, ListScraperData, FieldExtractorData, DetailField,
   AIExtractorData, FilterData, TransformData, FileExportData, WebhookData,
 } from './types'
