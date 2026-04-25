@@ -356,13 +356,15 @@ interface AISelectorAssistantProps {
   fields:       Array<{ id: string; label: string; type?: string }>
   /** Called when user applies suggestions */
   onApply:      (s: SelectorSuggestion) => void
+  /** Called when user adds a new field from a suggestion (fieldId doesn't exist yet) */
+  onAddField?:  (fieldId: string, label: string, selector: string) => void
   /** Optional URL hint */
   pageUrl?:     string
   /** Show list-page-specific fields (itemSelector, pagination) */
   showListMode?: boolean
 }
 
-function AISelectorAssistant({ fields, onApply, pageUrl, showListMode }: AISelectorAssistantProps) {
+function AISelectorAssistant({ fields, onApply, onAddField, pageUrl, showListMode }: AISelectorAssistantProps) {
   const [open,    setOpen]    = useState(false)
   const [html,    setHtml]    = useState('')
   const [url,     setUrl]     = useState(pageUrl ?? '')
@@ -498,15 +500,25 @@ function AISelectorAssistant({ fields, onApply, pageUrl, showListMode }: AISelec
 
               {Object.entries(result.selectors).map(([fieldId, sel]) => {
                 const field = fields.find(f => f.id === fieldId)
+                const exists = field !== undefined
+                const label  = field?.label ?? fieldId
                 return (
                   <div key={fieldId} className="rounded-lg bg-[#1a1d27] border border-[#2e3350] p-2.5 space-y-1">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-semibold text-slate-300">{field?.label ?? fieldId}</span>
-                      <button type="button"
-                        onClick={() => onApply({ selectors: { [fieldId]: sel } })}
-                        className="text-[9px] text-slate-500 hover:text-emerald-400 transition-colors">
-                        Apply
-                      </button>
+                      <span className="text-[10px] font-semibold text-slate-300">{label}</span>
+                      {exists ? (
+                        <button type="button"
+                          onClick={() => onApply({ selectors: { [fieldId]: sel } })}
+                          className="text-[9px] text-slate-500 hover:text-emerald-400 transition-colors">
+                          Apply
+                        </button>
+                      ) : (
+                        <button type="button"
+                          onClick={() => onAddField?.(fieldId, label, sel ?? '')}
+                          className="text-[9px] text-slate-500 hover:text-violet-400 transition-colors">
+                          Add
+                        </button>
+                      )}
                     </div>
                     {sel
                       ? <code className="text-[10px] text-cyan-300 font-mono block">{sel}</code>
@@ -957,6 +969,11 @@ export function FieldExtractorPanel({ id, data: d, update }: {
                 ? { ...f, selector: s.selectors[f.id] }
                 : f
             ),
+          })
+        }}
+        onAddField={(fieldId, label, selector) => {
+          update(id, {
+            fields: [...fields, { id: fieldId, label, selector, attrName: '', type: 'text' as const }],
           })
         }}
       />
