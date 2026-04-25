@@ -1,23 +1,61 @@
 import { ipcMain } from 'electron'
+import { runWorkflow, EngineController } from '../scraper/engine'
 import { runScraper, ScrapeController } from '../scraper'
-import type { ScraperConfig } from '@shared/ipc-types'
+import type { WorkflowConfig, ScraperConfig } from '@shared/ipc-types'
 import { getMainWindow } from './context'
+import { useSettingsStore } from './settings-bridge'
 
-let controller: ScrapeController | null = null
+let workflowController: EngineController | null = null
+let legacyController: ScrapeController | null = null
 
 export function registerScrapeIpc(): void {
+
+  // ── Generic workflow engine ────────────────────────────────────────────────
+  ipcMain.handle('workflow:start', async (_event, config: WorkflowConfig) => {
+    const win = getMainWindow()
+    workflowController?.abort()
+    workflowController = new EngineController()
+
+    const aiConfig = await useSettingsStore()
+
+    try {
+      const result = await runWorkflow(
+        config,
+        (progress) => win?.webContents.send('workflow:progress', progress),
+        (log)      => win?.webContents.send('workflow:log', log),
+        (records)  => win?.webContents.send('workflow:batch', records),
+        (status)   => win?.webContents.send('workflow:nodeStatus', status),
+        workflowController,
+        aiConfig,
+      )
+      win?.webContents.send('workflow:complete', result)
+      return { success: true, result }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message !== 'ABORTED') win?.webContents.send('workflow:error', message)
+      return { success: false, error: message }
+    } finally {
+      workflowController = null
+    }
+  })
+
+  ipcMain.handle('workflow:stop',   () => { workflowController?.abort();  workflowController = null })
+  ipcMain.handle('workflow:pause',  () => { workflowController?.pause()  })
+  ipcMain.handle('workflow:resume', () => { workflowController?.resume() })
+
+  // ── Legacy movie scraper (kept for backward compat) ────────────────────────
   ipcMain.handle('scrape:start', async (_event, config: ScraperConfig) => {
     const win = getMainWindow()
-    controller?.abort()
-    controller = new ScrapeController()
+    legacyController?.abort()
+    legacyController = new ScrapeController()
 
     try {
       const result = await runScraper(
         config,
         (progress) => win?.webContents.send('scrape:progress', progress),
-        (log) => win?.webContents.send('scrape:log', log),
-        (movies) => win?.webContents.send('scrape:movieBatch', movies),
-        controller,
+        (log)      => win?.webContents.send('scrape:log', log),
+        (movies)   => win?.webContents.send('scrape:movieBatch', movies),
+        legacyController,
       )
       win?.webContents.send('scrape:complete', result)
       return { success: true, ...result }
@@ -26,18 +64,11 @@ export function registerScrapeIpc(): void {
       win?.webContents.send('scrape:error', message)
       return { success: false, error: message }
     } finally {
-      controller = null
+      legacyController = null
     }
   })
 
-  ipcMain.handle('scrape:stop', () => {
-    controller?.abort()
-    controller = null
-  })
-  ipcMain.handle('scrape:pause', () => {
-    controller?.pause()
-  })
-  ipcMain.handle('scrape:resume', () => {
-    controller?.resume()
-  })
+  ipcMain.handle('scrape:stop',   () => { legacyController?.abort();  legacyController = null })
+  ipcMain.handle('scrape:pause',  () => { legacyController?.pause()  })
+  ipcMain.handle('scrape:resume', () => { legacyController?.resume() })
 }

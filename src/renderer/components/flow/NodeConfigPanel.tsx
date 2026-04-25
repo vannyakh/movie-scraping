@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react'
 import { type Node } from '@xyflow/react'
-import {
-  X, Settings2, Eye, Code2, Copy, Check, Trash2,
-  Globe2, Layers, List, FileSearch, Download,
-} from 'lucide-react'
+import { X, Settings2, Eye, Code2, Copy, Check, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  PALETTE_NODES, getSampleData,
-  type SourceData, type CategoryData, type MovieListData, type DetailData, type ExportData,
+import { PALETTE_NODES, getSampleData, type PaletteNodeMeta } from './nodes'
+import type {
+  BrowserSourceData, HttpSourceData, ApiSourceData,
+  LinkExtractorData, ListScraperData, FieldExtractorData,
+  AIExtractorData, FilterData, TransformData, FileExportData, WebhookData,
 } from './nodes'
 import {
-  SourcePanel, CategoryPanel, MovieListPanel, DetailPanel, ExportPanel,
+  BrowserSourcePanel, HttpSourcePanel, ApiSourcePanel,
+  LinkExtractorPanel, ListScraperPanel, FieldExtractorPanel,
+  AIExtractorPanel, FilterPanel, TransformPanel, FileExportPanel, WebhookPanel,
 } from './ConfigPanels'
 
 // ─── JSON Viewer ──────────────────────────────────────────────────────────────
@@ -21,9 +22,8 @@ function JsonValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
   if (typeof value === 'boolean') return <span className="text-violet-400">{String(value)}</span>
   if (typeof value === 'number')  return <span className="text-emerald-400">{value}</span>
   if (typeof value === 'string')  return <span className="text-amber-300">"{value}"</span>
-
   if (Array.isArray(value)) {
-    if (value.length === 0) return <span className="text-slate-400">[]</span>
+    if (!value.length) return <span className="text-slate-400">[]</span>
     return (
       <>
         <span className="text-slate-400">{'['}</span>
@@ -37,10 +37,9 @@ function JsonValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
       </>
     )
   }
-
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>)
-    if (entries.length === 0) return <span className="text-slate-400">{'{}'}</span>
+    if (!entries.length) return <span className="text-slate-400">{'{}'}</span>
     return (
       <>
         <span className="text-slate-400">{'{'}</span>
@@ -56,16 +55,7 @@ function JsonValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
       </>
     )
   }
-
   return <span className="text-slate-300">{String(value)}</span>
-}
-
-const NODE_DESC: Record<string, string> = {
-  source:    'Configuration passed to the scraper engine',
-  category:  'Array of discovered category links',
-  movieList: 'Array of movie items found per category page',
-  detail:    'Extracted data for a single movie detail page',
-  export:    'Export summary written alongside output files',
 }
 
 function JsonViewer({ nodeType, nodeData }: { nodeType: string; nodeData: unknown }) {
@@ -83,17 +73,14 @@ function JsonViewer({ nodeType, nodeData }: { nodeType: string; nodeData: unknow
       <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-600/10 border border-emerald-500/20">
         <Code2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
         <p className="text-[10px] text-emerald-300 leading-relaxed">
-          {NODE_DESC[nodeType] ?? 'Sample output for this node.'}
+          Sample output for the <span className="font-semibold">{nodeType}</span> node. Actual data depends on the target site.
         </p>
       </div>
-
       <div className="relative rounded-lg bg-[#0a0c14] border border-[#2e3350] overflow-hidden">
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#2e3350] bg-[#0f1117]">
           <span className="text-[9px] text-slate-600 font-mono uppercase tracking-widest">sample output</span>
-          <button
-            onClick={handleCopy}
-            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors"
-          >
+          <button onClick={handleCopy}
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors">
             {copied
               ? <><Check className="w-3 h-3 text-emerald-400" /><span className="text-emerald-400">Copied!</span></>
               : <><Copy className="w-3 h-3" /><span>Copy</span></>}
@@ -105,23 +92,27 @@ function JsonViewer({ nodeType, nodeData }: { nodeType: string; nodeData: unknow
           </pre>
         </div>
       </div>
-
-      <p className="text-[9px] text-slate-600 text-center">
-        Sample data — actual values depend on the scraped site.
-      </p>
     </div>
   )
 }
 
-// ─── Panel ────────────────────────────────────────────────────────────────────
+// ─── Accent map for header colors ─────────────────────────────────────────────
 
-const ACCENT_MAP: Record<string, { bg: string; icon: React.ElementType }> = {
-  source:    { bg: 'bg-indigo-600',  icon: Globe2     },
-  category:  { bg: 'bg-violet-600',  icon: Layers     },
-  movieList: { bg: 'bg-emerald-600', icon: List       },
-  detail:    { bg: 'bg-amber-600',   icon: FileSearch },
-  export:    { bg: 'bg-slate-600',   icon: Download   },
+const ACCENT_MAP: Record<string, string> = {
+  'browser-source':  'bg-indigo-600',
+  'http-source':     'bg-blue-600',
+  'api-source':      'bg-cyan-600',
+  'link-extractor':  'bg-violet-600',
+  'list-scraper':    'bg-purple-600',
+  'field-extractor': 'bg-amber-600',
+  'ai-extractor':    'bg-pink-600',
+  'filter':          'bg-orange-600',
+  'transform':       'bg-yellow-600',
+  'file-export':     'bg-emerald-600',
+  'webhook':         'bg-teal-600',
 }
+
+// ─── Panel ────────────────────────────────────────────────────────────────────
 
 export interface NodeConfigPanelProps {
   nodeId:           string | null
@@ -135,7 +126,7 @@ export interface NodeConfigPanelProps {
 export function NodeConfigPanel({
   nodeId, nodes, defaultTab = 'config', onClose, onUpdateNodeData, onDeleteNode,
 }: NodeConfigPanelProps) {
-  const node = nodeId ? nodes.find(n => n.id === nodeId) : null
+  const node = nodeId ? nodes.find((n) => n.id === nodeId) : null
   const open = !!node
   const [tab, setTab] = useState<'config' | 'preview'>(defaultTab)
 
@@ -147,22 +138,24 @@ export function NodeConfigPanel({
     return () => window.removeEventListener('keydown', handler)
   }, [open, onClose])
 
-  const meta = node ? ACCENT_MAP[node.type ?? ''] : null
-  const Icon = meta?.icon ?? Settings2
+  const accentBg = node ? (ACCENT_MAP[node.type ?? ''] ?? 'bg-slate-600') : 'bg-slate-600'
+  const paletteMeta: PaletteNodeMeta | undefined = node
+    ? PALETTE_NODES.find((p) => p.type === node.type)
+    : undefined
 
   return (
     <div className={cn(
       'absolute right-0 top-0 h-full w-80 bg-[#13151f] border-l border-[#2e3350] shadow-2xl flex flex-col z-40 transition-transform duration-200',
       open ? 'translate-x-0' : 'translate-x-full pointer-events-none',
     )}>
-      {node && meta ? (
+      {node ? (
         <>
           {/* Header */}
-          <div className={cn('flex items-center gap-2.5 px-4 py-3 shrink-0', meta.bg)}>
-            <Icon className="w-4 h-4 text-white shrink-0" />
+          <div className={cn('flex items-center gap-2.5 px-4 py-3 shrink-0', accentBg)}>
+            {paletteMeta && <paletteMeta.icon className="w-4 h-4 text-white shrink-0" />}
             <div className="flex-1 min-w-0">
               <p className="text-xs font-bold text-white uppercase tracking-widest">
-                {PALETTE_NODES.find(p => p.type === node.type)?.label ?? node.type}
+                {paletteMeta?.label ?? node.type}
               </p>
               <p className="text-[10px] text-white/50 font-mono">{node.id}</p>
             </div>
@@ -176,13 +169,16 @@ export function NodeConfigPanel({
 
           {/* Tabs */}
           <div className="flex shrink-0 border-b border-[#2e3350] bg-[#0f1117]">
-            {([['config', Settings2, 'Config', 'text-indigo-400 border-indigo-500'], ['preview', Eye, 'Preview', 'text-emerald-400 border-emerald-500']] as const).map(([t, TIcon, label, active]) => (
+            {([
+              ['config',  Settings2, 'Config',  'text-indigo-400 border-indigo-500' ],
+              ['preview', Eye,       'Preview', 'text-emerald-400 border-emerald-500'],
+            ] as const).map(([t, TIcon, label, activeCls]) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
                 className={cn(
                   'flex items-center gap-1.5 flex-1 justify-center py-2 text-[11px] font-medium transition-colors border-b-2',
-                  tab === t ? active : 'text-slate-500 border-transparent hover:text-slate-300',
+                  tab === t ? activeCls : 'text-slate-500 border-transparent hover:text-slate-300',
                 )}
               >
                 <TIcon className="w-3 h-3" />{label}
@@ -192,15 +188,23 @@ export function NodeConfigPanel({
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-4">
-            {tab === 'config' && (
-              <>
-                {node.type === 'source'    && <SourcePanel    id={node.id} data={node.data as unknown as SourceData}    update={onUpdateNodeData} />}
-                {node.type === 'category'  && <CategoryPanel  id={node.id} data={node.data as unknown as CategoryData}  update={onUpdateNodeData} />}
-                {node.type === 'movieList' && <MovieListPanel id={node.id} data={node.data as unknown as MovieListData} update={onUpdateNodeData} />}
-                {node.type === 'detail'    && <DetailPanel    id={node.id} data={node.data as unknown as DetailData}    update={onUpdateNodeData} />}
-                {node.type === 'export'    && <ExportPanel    id={node.id} data={node.data as unknown as ExportData}    update={onUpdateNodeData} />}
-              </>
-            )}
+            {tab === 'config' && (() => {
+              const t = node.type
+              const u = onUpdateNodeData
+              const d = node.data as unknown
+              if (t === 'browser-source')  return <BrowserSourcePanel  id={node.id} data={d as BrowserSourceData}  update={u} />
+              if (t === 'http-source')     return <HttpSourcePanel     id={node.id} data={d as HttpSourceData}     update={u} />
+              if (t === 'api-source')      return <ApiSourcePanel      id={node.id} data={d as ApiSourceData}      update={u} />
+              if (t === 'link-extractor')  return <LinkExtractorPanel  id={node.id} data={d as LinkExtractorData}  update={u} />
+              if (t === 'list-scraper')    return <ListScraperPanel    id={node.id} data={d as ListScraperData}    update={u} />
+              if (t === 'field-extractor') return <FieldExtractorPanel id={node.id} data={d as FieldExtractorData} update={u} />
+              if (t === 'ai-extractor')    return <AIExtractorPanel    id={node.id} data={d as AIExtractorData}    update={u} />
+              if (t === 'filter')          return <FilterPanel         id={node.id} data={d as FilterData}         update={u} />
+              if (t === 'transform')       return <TransformPanel      id={node.id} data={d as TransformData}      update={u} />
+              if (t === 'file-export')     return <FileExportPanel     id={node.id} data={d as FileExportData}     update={u} />
+              if (t === 'webhook')         return <WebhookPanel        id={node.id} data={d as WebhookData}        update={u} />
+              return <p className="text-slate-500 text-sm">No config panel for type: {t}</p>
+            })()}
             {tab === 'preview' && node.type && (
               <JsonViewer nodeType={node.type} nodeData={node.data} />
             )}
@@ -213,8 +217,7 @@ export function NodeConfigPanel({
                 onClick={() => { onDeleteNode(node.id); onClose() }}
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-red-400 border border-red-500/30 hover:border-red-500/60 hover:bg-red-950/30 transition-colors"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                Delete Node
+                <Trash2 className="w-3.5 h-3.5" /> Delete Node
               </button>
             </div>
           )}

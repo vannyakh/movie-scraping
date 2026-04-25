@@ -118,8 +118,10 @@ interface ProjectCardProps {
 }
 
 function ProjectCard({ project, onClick, onRename, onDelete }: ProjectCardProps) {
-  const nodeCount = project.nodes.length
-  const edgeCount = project.edges.length
+  const firstWf   = project.workflows[0]
+  const nodeCount = firstWf?.nodes.length ?? 0
+  const edgeCount = firstWf?.edges.length ?? 0
+  const wfCount   = project.workflows.length
 
   const date = new Date(project.updatedAt).toLocaleDateString(undefined, {
     month: 'short', day: 'numeric', year: 'numeric',
@@ -154,11 +156,15 @@ function ProjectCard({ project, onClick, onRename, onDelete }: ProjectCardProps)
       <div className="flex items-center gap-3 mt-4">
         <span className="flex items-center gap-1 text-[11px] text-slate-500">
           <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-          {nodeCount} node{nodeCount !== 1 ? 's' : ''}
+          {wfCount} workflow{wfCount !== 1 ? 's' : ''}
         </span>
         <span className="flex items-center gap-1 text-[11px] text-slate-500">
           <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
-          {edgeCount} connection{edgeCount !== 1 ? 's' : ''}
+          {nodeCount} node{nodeCount !== 1 ? 's' : ''}
+        </span>
+        <span className="flex items-center gap-1 text-[11px] text-slate-500">
+          <span className="w-1.5 h-1.5 rounded-full bg-fuchsia-500" />
+          {edgeCount} link{edgeCount !== 1 ? 's' : ''}
         </span>
         <span className="ml-auto flex items-center gap-1 text-[11px] text-slate-600">
           <Clock className="w-3 h-3" />

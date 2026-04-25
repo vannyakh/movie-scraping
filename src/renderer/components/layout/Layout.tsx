@@ -2,22 +2,24 @@ import { useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import Sidebar from './Sidebar'
-import { useScrapingStore } from '@/store/scrapingStore'
+import { useJobStore } from '@/store/jobStore'
 
 export default function Layout() {
-  const store = useScrapingStore()
+  const store = useJobStore()
 
-  /* ── Wire up all IPC push events once at the layout level ── */
+  /* Wire up all IPC push events once at the layout level */
   useEffect(() => {
     if (!window.electronAPI) return
 
     const offs = [
-      window.electronAPI.onProgress((p) => store.updateProgress(p)),
-      window.electronAPI.onLog((msg)     => store.appendLog(msg)),
-      window.electronAPI.onMovieBatch((movies) => store.appendMovies(movies)),
-      window.electronAPI.onComplete((result)   => store.completeJob(result)),
-      window.electronAPI.onError((err)         => store.failJob(err)),
+      window.electronAPI.onProgress((p)    => store.updateProgress(p)),
+      window.electronAPI.onLog((msg)        => store.appendLog(msg)),
+      window.electronAPI.onBatch((records)  => store.appendRecords(records)),
+      window.electronAPI.onComplete((result) => store.completeJob(result)),
+      window.electronAPI.onError((err)      => store.failJob(err)),
+      window.electronAPI.onNodeStatus((s)   => store.updateNodeStatus(s)),
     ]
+
     return () => offs.forEach((off) => off())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

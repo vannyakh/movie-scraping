@@ -1,4 +1,66 @@
-/** Shared between main (scraper), preload typings, and renderer `ipc.ts`. */
+/** Shared between main (engine), preload, and renderer. */
+
+// ─── Generic types ────────────────────────────────────────────────────────────
+
+export interface DataRecord {
+  [key: string]: unknown
+}
+
+export interface WorkflowNodeConfig {
+  id:   string
+  type: string
+  data: Record<string, unknown>
+}
+
+export interface WorkflowEdgeConfig {
+  id:     string
+  source: string
+  target: string
+}
+
+export interface WorkflowConfig {
+  workflowId:  string
+  projectId?:  string
+  nodes:       WorkflowNodeConfig[]
+  edges:       WorkflowEdgeConfig[]
+}
+
+export type NodeExecStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped'
+
+export interface NodeStatus {
+  nodeId:       string
+  status:       NodeExecStatus
+  recordCount?: number
+  startedAt?:   string
+  completedAt?: string
+  error?:       string
+}
+
+export interface JobProgress {
+  nodeId?:    string
+  step:       number
+  totalSteps: number
+  message:    string
+  current:    number
+  total:      number
+}
+
+export interface JobResult {
+  records:      DataRecord[]
+  totalRecords: number
+  outputPaths?: Record<string, string>
+}
+
+export type WorkflowStartResult =
+  | { success: true;  result: JobResult }
+  | { success: false; error: string }
+
+export type ProgressCallback    = (p: JobProgress)  => void
+export type LogCallback         = (msg: string)      => void
+export type BatchCallback       = (r: DataRecord[])  => void
+export type NodeStatusCallback  = (s: NodeStatus)    => void
+
+// ─── Legacy types (kept for compatibility with stored project data) ───────────
 
 export interface MovieData {
   title:        string
@@ -43,26 +105,7 @@ export interface ScraperConfig {
   }
 }
 
-export interface ScraperProgress {
-  step:    1 | 2 | 3
-  label:   string
-  current: number
-  total:   number
-  message: string
-}
-
-export interface ScraperResult {
-  jsonPath?:   string
-  excelPath?:  string
-  csvPath?:    string
-  totalMovies: number
-  movies:      MovieData[]
-}
-
-export type ProgressCallback   = (p: ScraperProgress) => void
-export type LogCallback        = (msg: string) => void
+export type ScraperProgress   = { step: 1 | 2 | 3; label: string; current: number; total: number; message: string }
+export type ScraperResult     = { movies: MovieData[]; totalMovies: number; jsonPath?: string; excelPath?: string; csvPath?: string }
 export type MovieBatchCallback = (movies: MovieData[]) => void
-
-export type StartResult =
-  | ({ success: true } & ScraperResult)
-  | { success: false; error: string }
+export type StartResult = WorkflowStartResult

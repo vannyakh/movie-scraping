@@ -1,5 +1,8 @@
 import { toast } from 'sonner'
-import { RotateCcw, FolderOpen, Monitor, Clock, Download, Shield } from 'lucide-react'
+import {
+  RotateCcw, FolderOpen, Monitor, Clock, Download, Bot, Key, Eye, EyeOff,
+} from 'lucide-react'
+import { useState } from 'react'
 import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
 
@@ -29,11 +32,8 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button
-      type="button" role="switch" aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={cn('relative w-9 h-5 rounded-full transition-colors', checked ? 'bg-indigo-600' : 'bg-[#2e3350]')}
-    >
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
+      className={cn('relative w-9 h-5 rounded-full transition-colors', checked ? 'bg-indigo-600' : 'bg-[#2e3350]')}>
       <span className={cn('absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow', checked ? 'translate-x-4' : '')} />
     </button>
   )
@@ -44,11 +44,9 @@ function NumberField({ value, onChange, min = 0, max, step = 1, unit }: {
 }) {
   return (
     <div className="flex items-center gap-2">
-      <input
-        type="number" min={min} max={max} step={step} value={value}
+      <input type="number" min={min} max={max} step={step} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-24 bg-[#0f1117] border border-[#2e3350] text-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-500 text-right"
-      />
+        className="w-24 bg-[#0f1117] border border-[#2e3350] text-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-500 text-right" />
       {unit && <span className="text-xs text-slate-500">{unit}</span>}
     </div>
   )
@@ -56,28 +54,24 @@ function NumberField({ value, onChange, min = 0, max, step = 1, unit }: {
 
 export default function Settings() {
   const { settings, update, reset } = useSettingsStore()
+  const [showApiKey, setShowApiKey] = useState(false)
 
   const pickFolder = async () => {
     const folder = await window.electronAPI.selectFolder()
     if (folder) { update({ outputDir: folder }); toast.success('Output folder updated') }
   }
 
-  const handleReset = () => {
-    reset()
-    toast.success('Settings reset to defaults')
-  }
+  const handleReset = () => { reset(); toast.success('Settings reset to defaults') }
 
   return (
     <div className="p-8 max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Settings</h1>
-          <p className="text-slate-400 text-sm mt-1">Defaults applied to every new scraping job</p>
+          <p className="text-slate-400 text-sm mt-1">Default values applied to new workflows</p>
         </div>
-        <button
-          onClick={handleReset}
-          className="flex items-center gap-1.5 px-3 py-2 bg-[#1a1d27] border border-[#2e3350] text-slate-400 hover:text-white rounded-lg text-sm transition-colors"
-        >
+        <button onClick={handleReset}
+          className="flex items-center gap-1.5 px-3 py-2 bg-[#1a1d27] border border-[#2e3350] text-slate-400 hover:text-white rounded-lg text-sm transition-colors">
           <RotateCcw className="w-3.5 h-3.5" /> Reset defaults
         </button>
       </div>
@@ -89,12 +83,9 @@ export default function Settings() {
             <Toggle checked={settings.headless} onChange={(v) => update({ headless: v })} />
           </Row>
           <Row label="User Agent" hint="Leave blank for default Chrome UA">
-            <input
-              value={settings.userAgent}
-              onChange={(e) => update({ userAgent: e.target.value })}
+            <input value={settings.userAgent} onChange={(e) => update({ userAgent: e.target.value })}
               className="w-64 bg-[#0f1117] border border-[#2e3350] text-slate-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500"
-              placeholder="Mozilla/5.0 …"
-            />
+              placeholder="Mozilla/5.0 …" />
           </Row>
         </Section>
 
@@ -103,52 +94,93 @@ export default function Settings() {
           <Row label="Delay between requests" hint="Politeness delay to avoid rate limiting">
             <NumberField value={settings.delayMs} onChange={(v) => update({ delayMs: v })} min={0} max={30000} step={100} unit="ms" />
           </Row>
-          <Row label="Max pages per category" hint="Pagination depth limit">
-            <NumberField value={settings.maxPagesPerCategory} onChange={(v) => update({ maxPagesPerCategory: v })} min={1} max={1000} />
+          <Row label="Max pages per source" hint="Pagination depth limit">
+            <NumberField value={settings.maxPages} onChange={(v) => update({ maxPages: v })} min={1} max={1000} />
           </Row>
-          <Row label="Max movies per category">
-            <NumberField value={settings.maxMoviesPerCategory} onChange={(v) => update({ maxMoviesPerCategory: v })} min={1} max={100000} />
+          <Row label="Max items per source">
+            <NumberField value={settings.maxItems} onChange={(v) => update({ maxItems: v })} min={1} max={100000} />
           </Row>
         </Section>
 
         {/* Export */}
         <Section icon={Download} title="Export Formats">
-          <Row label="JSON" hint="Save scraped data as .json">
+          <Row label="JSON">
             <Toggle checked={settings.exportJson} onChange={(v) => update({ exportJson: v })} />
           </Row>
-          <Row label="Excel (.xlsx)" hint="Save as formatted spreadsheet">
+          <Row label="Excel (.xlsx)">
             <Toggle checked={settings.exportExcel} onChange={(v) => update({ exportExcel: v })} />
           </Row>
-          <Row label="CSV" hint="Save as comma-separated values">
+          <Row label="CSV">
             <Toggle checked={settings.exportCsv} onChange={(v) => update({ exportCsv: v })} />
           </Row>
-          <Row label="Default output folder" hint="Where files are saved">
+          <Row label="Default output folder">
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-400 max-w-[160px] truncate">{settings.outputDir || 'Not set'}</span>
-              <button onClick={pickFolder} className="flex items-center gap-1 px-2.5 py-1.5 bg-[#21253a] border border-[#2e3350] text-slate-300 hover:text-white rounded-lg text-xs transition-colors">
+              <button onClick={pickFolder}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-[#21253a] border border-[#2e3350] text-slate-300 hover:text-white rounded-lg text-xs transition-colors">
                 <FolderOpen className="w-3.5 h-3.5" /> Browse
               </button>
             </div>
           </Row>
         </Section>
 
-        {/* Defaults */}
-        <Section icon={Shield} title="Default URL">
-          <Row label="Default scraping URL" hint="Pre-filled in new scraping form">
-            <input
-              value={settings.defaultUrl}
-              onChange={(e) => update({ defaultUrl: e.target.value })}
-              className="w-64 bg-[#0f1117] border border-[#2e3350] text-slate-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-500"
-              placeholder="https://movie-site.com"
-            />
+        {/* AI */}
+        <Section icon={Bot} title="AI Integration">
+          <div className="rounded-lg bg-pink-600/10 border border-pink-500/20 px-3 py-2.5 mb-1">
+            <p className="text-[11px] text-pink-300 leading-relaxed">
+              AI features (AI Extractor node, Build Workflow with AI) require an API key.
+              Keys are stored locally and never shared.
+            </p>
+          </div>
+          <Row label="Provider">
+            <select value={settings.aiProvider}
+              onChange={(e) => update({ aiProvider: e.target.value as 'openai' | 'anthropic' | 'none' })}
+              className="bg-[#0f1117] border border-[#2e3350] text-slate-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-500">
+              <option value="none">None (disabled)</option>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+            </select>
           </Row>
+          {settings.aiProvider !== 'none' && (
+            <>
+              <Row label={settings.aiProvider === 'openai' ? 'OpenAI API Key' : 'Anthropic API Key'} hint="Starts with sk-…">
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Key className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
+                    <input
+                      type={showApiKey ? 'text' : 'password'}
+                      value={settings.aiApiKey}
+                      onChange={(e) => update({ aiApiKey: e.target.value })}
+                      className="w-52 bg-[#0f1117] border border-[#2e3350] text-slate-300 rounded-lg pl-7 pr-8 py-1.5 text-xs outline-none focus:border-indigo-500"
+                      placeholder="sk-…"
+                    />
+                    <button
+                      onClick={() => setShowApiKey((v) => !v)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      {showApiKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    </button>
+                  </div>
+                </div>
+              </Row>
+              <Row label="Model">
+                <select value={settings.aiModel}
+                  onChange={(e) => update({ aiModel: e.target.value })}
+                  className="bg-[#0f1117] border border-[#2e3350] text-slate-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-500">
+                  {settings.aiProvider === 'openai'
+                    ? ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'].map((m) => <option key={m}>{m}</option>)
+                    : ['claude-3-haiku-20240307', 'claude-3-5-sonnet-20241022', 'claude-3-opus-20240229'].map((m) => <option key={m}>{m}</option>)}
+                </select>
+              </Row>
+            </>
+          )}
         </Section>
 
         <button
-          onClick={() => { toast.success('Settings saved') }}
+          onClick={() => toast.success('Settings auto-saved')}
           className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl transition-colors text-sm"
         >
-          Save Settings
+          Settings are saved automatically
         </button>
       </div>
     </div>

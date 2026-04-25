@@ -1,121 +1,32 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import {
-  ArrowLeft, Workflow, FileText, Globe,
-  FolderOpen, ChevronDown, ChevronUp, Settings2,
-} from 'lucide-react'
+import { ArrowLeft, Workflow, FileText } from 'lucide-react'
 import { useProjectStore } from '@/store/projectStore'
-import { useSettingsStore } from '@/store/settingsStore'
-import { cn } from '@/lib/utils'
-
-// ─── Mini helpers ─────────────────────────────────────────────────────────────
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">
-        {label}
-      </label>
+      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">{label}</label>
       {children}
       {hint && <p className="text-xs text-slate-500 mt-1">{hint}</p>}
     </div>
   )
 }
 
-function TextInput({
-  value, onChange, placeholder, autoFocus,
-}: {
-  value: string; onChange: (v: string) => void; placeholder?: string; autoFocus?: boolean
-}) {
-  return (
-    <input
-      type="text"
-      autoFocus={autoFocus}
-      value={value}
-      placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-[#0f1117] border border-[#2e3350] text-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-indigo-500 transition-colors placeholder:text-slate-600"
-    />
-  )
-}
-
-function Toggle({
-  checked, onChange, label,
-}: {
-  checked: boolean; onChange: (v: boolean) => void; label: string
-}) {
-  return (
-    <label className="flex items-center gap-3 cursor-pointer group">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          'relative w-9 h-5 rounded-full transition-colors shrink-0',
-          checked ? 'bg-indigo-600' : 'bg-[#2e3350]',
-        )}
-      >
-        <span className={cn(
-          'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow',
-          checked ? 'translate-x-4' : 'translate-x-0',
-        )} />
-      </button>
-      <span className="text-sm text-slate-300 group-hover:text-slate-100">{label}</span>
-    </label>
-  )
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
+const inputCls = 'w-full bg-[#0f1117] border border-[#2e3350] text-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-indigo-500 transition-colors placeholder:text-slate-600'
 
 export default function ProjectCreate() {
-  const navigate    = useNavigate()
+  const navigate      = useNavigate()
   const createProject = useProjectStore((s) => s.createProject)
-  const { settings }  = useSettingsStore()
 
   const [name,        setName]        = useState('')
   const [description, setDescription] = useState('')
-  const [defaultUrl,  setDefaultUrl]  = useState(settings.defaultUrl || '')
-  const [outputDir,   setOutputDir]   = useState(settings.outputDir  || '')
-  const [headless,    setHeadless]    = useState(settings.headless)
-  const [showAdvanced, setShowAdvanced] = useState(false)
-
-  const pickFolder = async () => {
-    const folder = await window.electronAPI.selectFolder()
-    if (folder) setOutputDir(folder)
-  }
 
   const handleCreate = () => {
-    if (!name.trim()) {
-      toast.error('Please enter a project name')
-      return
-    }
+    if (!name.trim()) { toast.error('Please enter a project name'); return }
 
     const project = createProject(name.trim(), description.trim())
-
-    // Pre-fill the source node's baseUrl if one was provided
-    if (defaultUrl.trim() || outputDir.trim() || !headless) {
-      const { updateProject } = useProjectStore.getState()
-      const updatedNodes = project.nodes.map((n) => {
-        if (n.type === 'source' && (defaultUrl.trim() || !headless)) {
-          return {
-            ...n,
-            data: {
-              ...n.data,
-              baseUrl:  defaultUrl.trim() || (n.data as { baseUrl: string }).baseUrl,
-              headless,
-            },
-          }
-        }
-        if (n.type === 'export' && outputDir.trim()) {
-          return { ...n, data: { ...n.data, outputDir: outputDir.trim() } }
-        }
-        return n
-      })
-      updateProject(project.id, { nodes: updatedNodes })
-    }
-
     toast.success('Project created!')
     navigate(`/projects/${project.id}`)
   }
@@ -137,8 +48,8 @@ export default function ProjectCreate() {
           <Workflow className="w-5 h-5 text-indigo-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Create Project</h1>
-          <p className="text-slate-400 text-sm mt-0.5">Set up your project then build the scraping flow</p>
+          <h1 className="text-2xl font-bold text-slate-100">New Project</h1>
+          <p className="text-slate-400 text-sm mt-0.5">Set up a project and build your extraction pipeline</p>
         </div>
       </div>
 
@@ -151,78 +62,33 @@ export default function ProjectCreate() {
           </div>
           <div className="flex flex-col gap-4">
             <Field label="Project Name">
-              <TextInput
+              <input
                 autoFocus
+                className={inputCls}
                 value={name}
-                onChange={setName}
-                placeholder="e.g. IMDB Scraper, Netflix Titles…"
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleCreate() }}
+                placeholder="e.g. E-commerce Scraper, Job Listings…"
               />
             </Field>
             <Field label="Description" hint="Optional — helps you remember what this project does">
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Short description of this scraping project…"
+                placeholder="Short description of this project…"
                 rows={2}
-                className="w-full bg-[#0f1117] border border-[#2e3350] text-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-indigo-500 transition-colors placeholder:text-slate-600 resize-none"
+                className={inputCls + ' resize-none'}
               />
             </Field>
           </div>
         </div>
 
-        {/* Optional: quick config prefill */}
-        <div className="bg-[#1a1d27] border border-[#2e3350] rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Globe className="w-4 h-4 text-indigo-400" />
-            <span className="text-sm font-semibold text-slate-200">Quick Setup</span>
-            <span className="ml-auto text-xs text-slate-500">Pre-fills the flow builder</span>
-          </div>
-          <div className="flex flex-col gap-4">
-            <Field label="Target URL" hint="The homepage or category listing URL — can be set later in the flow">
-              <TextInput
-                value={defaultUrl}
-                onChange={setDefaultUrl}
-                placeholder="https://example-movie-site.com"
-              />
-            </Field>
-            <Field label="Output Folder" hint="Where exports will be saved">
-              <div className="flex gap-2">
-                <TextInput value={outputDir} onChange={setOutputDir} placeholder="Select folder…" />
-                <button
-                  onClick={pickFolder}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-[#21253a] border border-[#2e3350] text-slate-300 rounded-lg hover:border-indigo-500 transition-colors text-sm"
-                >
-                  <FolderOpen className="w-4 h-4" />
-                  Browse
-                </button>
-              </div>
-            </Field>
-          </div>
-        </div>
-
-        {/* Advanced */}
-        <div className="bg-[#1a1d27] border border-[#2e3350] rounded-xl overflow-hidden">
-          <button
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="w-full flex items-center justify-between px-5 py-4 text-sm font-semibold text-slate-300 hover:text-slate-100 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <Settings2 className="w-4 h-4 text-slate-400" />
-              Advanced Options
-            </div>
-            {showAdvanced
-              ? <ChevronUp className="w-4 h-4" />
-              : <ChevronDown className="w-4 h-4" />}
-          </button>
-          {showAdvanced && (
-            <div className="px-5 pb-5 border-t border-[#2e3350] pt-4">
-              <Toggle
-                checked={headless}
-                onChange={setHeadless}
-                label="Headless browser (no visible window)"
-              />
-            </div>
-          )}
+        <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-4">
+          <p className="text-sm text-indigo-300 font-medium mb-1">Next: Open the flow builder</p>
+          <p className="text-xs text-indigo-400/70">
+            Drag nodes from the left panel to build your scraping pipeline.
+            Connect a source → extractors → output node, then hit Run.
+          </p>
         </div>
 
         {/* Create button */}

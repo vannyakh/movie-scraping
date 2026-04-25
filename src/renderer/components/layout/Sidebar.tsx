@@ -2,24 +2,26 @@ import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, FolderOpen, Activity, Database,
-  History, Settings, Film, ChevronRight,
+  History, Settings, Workflow, ChevronRight,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useScrapingStore } from '@/store/scrapingStore'
+import { useJobStore } from '@/store/jobStore'
 
 const NAV = [
-  { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/projects', icon: FolderOpen,      label: 'Projects'  },
-  { to: '/task-jobs', icon: Activity,        label: 'Task Jobs' },
-  { to: '/results',  icon: Database,        label: 'Results'   },
-  { to: '/history',  icon: History,         label: 'History'   },
+  { to: '/',          icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/projects',  icon: FolderOpen,      label: 'Projects'  },
+  { to: '/task-jobs', icon: Activity,        label: 'Jobs'      },
+  { to: '/results',   icon: Database,        label: 'Results'   },
+  { to: '/history',   icon: History,         label: 'History'   },
 ]
 
 export default function Sidebar() {
-  const activeJob  = useScrapingStore((s) => s.activeJob)
-  const navigate   = useNavigate()
+  const activeJob = useJobStore((s) => s.activeJob)
+  const navigate  = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
+
+  const isRunning = activeJob?.status === 'running' || activeJob?.status === 'paused'
 
   return (
     <aside
@@ -34,7 +36,7 @@ export default function Sidebar() {
           className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0 cursor-pointer"
           onClick={() => navigate('/')}
         >
-          <Film className="w-4 h-4 text-white" />
+          <Workflow className="w-4 h-4 text-white" />
         </div>
 
         {!collapsed && (
@@ -42,7 +44,7 @@ export default function Sidebar() {
             className="font-bold text-[15px] text-slate-100 tracking-tight flex-1 cursor-pointer truncate"
             onClick={() => navigate('/')}
           >
-            MovieScraping
+            DataFlow
           </span>
         )}
 
@@ -56,8 +58,7 @@ export default function Sidebar() {
         >
           {collapsed
             ? <PanelLeftOpen  className="w-4 h-4" />
-            : <PanelLeftClose className="w-4 h-4" />
-          }
+            : <PanelLeftClose className="w-4 h-4" />}
         </button>
       </div>
 
@@ -66,7 +67,7 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-2 py-4 flex flex-col gap-0.5 overflow-y-auto">
         {NAV.map(({ to, icon: Icon, label }) => {
-          const hasActiveJob = to === '/progress' && activeJob?.status === 'running'
+          const showDot = to === '/task-jobs' && isRunning
           return (
             <NavLink
               key={to}
@@ -88,13 +89,13 @@ export default function Sidebar() {
                   {!collapsed && (
                     <>
                       <span className="flex-1">{label}</span>
-                      {hasActiveJob && (
+                      {showDot && (
                         <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                       )}
                       {navActive && <ChevronRight className="w-3 h-3 opacity-60" />}
                     </>
                   )}
-                  {collapsed && hasActiveJob && (
+                  {collapsed && showDot && (
                     <span className="absolute right-2 top-2 w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
                   )}
                 </>
@@ -104,11 +105,18 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Stats pill — hidden when collapsed */}
-      {activeJob && !collapsed && (
+      {/* Active job status pill */}
+      {isRunning && activeJob && !collapsed && (
         <div className="mx-3 mb-3 p-3 rounded-lg bg-[#1a1d27] border border-[#2e3350]">
-          <div className="text-xs text-slate-400 mb-1.5 font-medium">Active Job</div>
-          <div className="text-xs text-slate-300 truncate">{activeJob.config.baseUrl}</div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
+            <div className="text-xs text-slate-400 font-medium truncate">
+              {activeJob.workflowName ?? 'Running job'}
+            </div>
+          </div>
+          <div className="text-xs text-slate-500 truncate">
+            {activeJob.progress?.message ?? 'Initializing…'}
+          </div>
           <div className="mt-2 flex items-center gap-2">
             <div className="flex-1 h-1.5 bg-[#2e3350] rounded-full overflow-hidden">
               <div
@@ -121,20 +129,19 @@ export default function Sidebar() {
               />
             </div>
             <span className="text-xs text-indigo-400 font-mono w-8 text-right">
-              {activeJob.movies.length}
+              {activeJob.records.length}
             </span>
           </div>
         </div>
       )}
 
-      {/* Stats dot — shown when collapsed & job running */}
-      {activeJob && collapsed && (
+      {isRunning && activeJob && collapsed && (
         <div className="mx-auto mb-3 w-8 h-8 flex items-center justify-center rounded-lg bg-[#1a1d27] border border-[#2e3350]">
           <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
         </div>
       )}
 
-      {/* Settings link */}
+      {/* Settings */}
       <div className="mx-2 mb-4">
         <NavLink
           to="/settings"
