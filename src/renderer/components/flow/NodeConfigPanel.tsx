@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { type Node } from '@xyflow/react'
-import { Settings2, Eye, Code2, Copy, Check, Trash2, ChevronLeft } from 'lucide-react'
+import { Settings2, Eye, Code2, Copy, Check, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PALETTE_NODES, getSampleData, type PaletteNodeMeta, ACCENT_HEX, NODE_ACCENT_KEY } from './nodes'
 import type {
@@ -152,17 +152,9 @@ export function NodeConfigPanel({
         <>
           {/* Header */}
           <div
-            className="flex items-center gap-2.5 px-4 py-3 shrink-0"
+            className="flex items-center gap-2.5 px-3 py-3 shrink-0"
             style={{ background: `${hex}15`, borderBottom: `1px solid ${hex}30` }}
           >
-            {/* Back / Close */}
-            <button
-              onClick={onClose}
-              className="flex items-center justify-center w-7 h-7 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-white/8 transition-colors shrink-0"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
             {/* Icon */}
             {paletteMeta && (
               <div
@@ -188,6 +180,18 @@ export function NodeConfigPanel({
               title="Delete node"
             >
               <Trash2 className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Divider */}
+            <div className="w-px h-4 bg-[#2a2e45] shrink-0" />
+
+            {/* Close panel */}
+            <button
+              onClick={onClose}
+              title="Close panel (Esc)"
+              className="flex items-center justify-center w-7 h-7 rounded-xl text-slate-500 hover:text-slate-100 hover:bg-white/10 transition-colors shrink-0"
+            >
+              <X className="w-4 h-4" />
             </button>
           </div>
 

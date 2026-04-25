@@ -504,7 +504,7 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
           <Group
             orientation="horizontal"
             className="flex-1 overflow-hidden"
-            defaultLayout={{ canvas: 72, right: 28 }}
+            defaultLayout={{ canvas: 66, right: 34 }}
           >
 
             {/* Canvas */}
@@ -578,15 +578,15 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
               </Separator>
             )}
 
-            {/* Right drawer panel — resizable, min 22% max 50%, default 28% */}
+            {/* Right drawer panel — resizable, min 26% max 55%, default 34% */}
             <Panel
               id="right"
               panelRef={rightPanelRef}
               collapsible
-              collapsedSize={0}
-              defaultSize={28}
-              minSize={22}
-              maxSize={50}
+              collapsedSize="0"
+              defaultSize="34"
+              minSize="26"
+              maxSize="55"
               style={isDragging ? undefined : { transition: 'flex 0.22s cubic-bezier(0.4,0,0.2,1)' }}
               className="overflow-hidden"
             >
