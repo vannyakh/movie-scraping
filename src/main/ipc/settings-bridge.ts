@@ -17,10 +17,12 @@ export async function useSettingsStore(): Promise<AIConfig | undefined> {
     const parsed = JSON.parse(raw) as { state?: { settings?: { aiProvider?: string; aiApiKey?: string; aiModel?: string } } }
     const s = parsed.state?.settings
     if (!s?.aiApiKey || s.aiProvider === 'none') return undefined
+    const provider = s.aiProvider ?? 'openai'
+    const defaultModel = provider === 'anthropic' ? 'claude-3-5-sonnet-20241022' : 'gpt-4o-mini'
     return {
-      provider: s.aiProvider ?? 'openai',
-      apiKey:   s.aiApiKey,
-      model:    s.aiModel ?? 'gpt-4o-mini',
+      provider,
+      apiKey: s.aiApiKey,
+      model:  s.aiModel ?? defaultModel,
     }
   } catch {
     return undefined

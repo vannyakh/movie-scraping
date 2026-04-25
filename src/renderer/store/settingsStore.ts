@@ -36,7 +36,7 @@ const DEFAULTS: AppSettings = {
   outputDir:   '',
   aiProvider:  'none',
   aiApiKey:    '',
-  aiModel:     'gpt-4o-mini',
+  aiModel:     'gpt-4o-mini',  // reset via Settings whenever provider changes
 }
 
 interface SettingsStore {

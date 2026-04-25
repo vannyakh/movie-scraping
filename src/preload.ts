@@ -9,6 +9,7 @@ const api = {
 
   // ─── AI ───────────────────────────────────────────────────────────────────
   generateWorkflow: (prompt: string) => ipcRenderer.invoke('ai:generateWorkflow', prompt),
+  fetchModels: (provider: string, apiKey: string) => ipcRenderer.invoke('ai:fetchModels', provider, apiKey),
 
   // ─── Utilities ────────────────────────────────────────────────────────────
   openPath:     (p: string)                    => ipcRenderer.invoke('open:path', p),

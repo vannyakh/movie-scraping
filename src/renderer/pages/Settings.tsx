@@ -134,7 +134,14 @@ export default function Settings() {
           </div>
           <Row label="Provider">
             <select value={settings.aiProvider}
-              onChange={(e) => update({ aiProvider: e.target.value as 'openai' | 'anthropic' | 'none' })}
+              onChange={(e) => {
+                const p = e.target.value as 'openai' | 'anthropic' | 'none'
+                update({
+                  aiProvider: p,
+                  // Reset to the provider's current default model to avoid stale 404 model names
+                  aiModel: p === 'anthropic' ? 'claude-3-5-sonnet-20241022' : 'gpt-4o-mini',
+                })
+              }}
               className="bg-[#0f1117] border border-[#2e3350] text-slate-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-500">
               <option value="none">None (disabled)</option>
               <option value="openai">OpenAI</option>
@@ -168,8 +175,20 @@ export default function Settings() {
                   onChange={(e) => update({ aiModel: e.target.value })}
                   className="bg-[#0f1117] border border-[#2e3350] text-slate-300 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-indigo-500">
                   {settings.aiProvider === 'openai'
-                    ? ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'].map((m) => <option key={m}>{m}</option>)
-                    : ['claude-3-haiku-20240307', 'claude-3-5-sonnet-20241022', 'claude-3-opus-20240229'].map((m) => <option key={m}>{m}</option>)}
+                    ? (
+                      <>
+                        <option value="gpt-4o-mini">gpt-4o-mini (Fast)</option>
+                        <option value="gpt-4o">gpt-4o (Balanced)</option>
+                        <option value="gpt-4.1-mini">gpt-4.1-mini (Fast)</option>
+                        <option value="gpt-4.1">gpt-4.1 (Smart)</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="claude-3-5-haiku-20241022">claude-3-5-haiku (Fast)</option>
+                        <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet (Balanced)</option>
+                        <option value="claude-3-7-sonnet-20250219">claude-3-7-sonnet (Smart)</option>
+                      </>
+                    )}
                 </select>
               </Row>
             </>

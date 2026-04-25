@@ -43,6 +43,7 @@ declare global {
 
       // AI
       generateWorkflow: (prompt: string)             => Promise<{ nodes: unknown[]; edges: unknown[] } | { __error: string; message: string } | null>
+      fetchModels:      (provider: string, apiKey: string) => Promise<string[] | null>
 
       // Utilities
       openPath:     (filePath: string)               => Promise<void>
