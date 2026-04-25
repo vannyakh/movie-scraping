@@ -9,21 +9,26 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   Play, RotateCcw, Save, ArrowLeft, CheckCircle2, AlertCircle, Loader2,
-  Undo2, Redo2, Sparkles, Pause, Square, Workflow,
+  Undo2, Redo2, Sparkles, Pause, Square, Workflow, History,
 } from 'lucide-react'
 import {
   nodeTypes, edgeTypes, defaultNodeData, NodeDetailProvider, NodeStatusProvider,
   DEFAULT_DETAIL_FIELDS, INITIAL_NODES, INITIAL_EDGES, NODE_COLOR_MAP,
 } from './nodes'
-import { NodeConfigPanel } from './NodeConfigPanel'
-import { NodePalette }     from './NodePalette'
-import { FlowControls }    from './FlowControls'
-import { AIPromptModal }   from './AIPromptModal'
+import { NodeConfigPanel }    from './NodeConfigPanel'
+import { NodePalette }        from './NodePalette'
+import { FlowControls }       from './FlowControls'
+import { AIDrawerPanel }      from './AIDrawerPanel'
+import { HistoryDrawerPanel } from './HistoryDrawerPanel'
+import { ExecutionPanel }     from './ExecutionPanel'
 import { flowToWorkflow, isFlowValid } from './flowToWorkflow'
 import { useFlowHistory, type FlowSnapshot } from '@/hooks/useFlowHistory'
 import { useJobStore } from '@/store/jobStore'
 import { useSettingsStore } from '@/store/settingsStore'
+import { useIpcEvents } from '@/hooks/useIpcEvents'
 import { cn } from '@/lib/utils'
+
+type RightDrawer = 'ai' | 'history' | 'execution' | null
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,13 +73,19 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
   const { settings } = useSettingsStore()
   const wrapperRef   = useRef<HTMLDivElement>(null)
 
+  // Wire up IPC → job store (safe to call multiple times; each adds its own listener set)
+  useIpcEvents()
+
   const [nodes, setNodes] = useState<Node[]>(initialNodes ?? INITIAL_NODES)
   const [edges, setEdges] = useState<Edge[]>(initialEdges ?? INITIAL_EDGES)
   const { screenToFlowPosition, updateNodeData, deleteElements, fitView } = useReactFlow()
 
   const [configNodeId, setConfigNodeId] = useState<string | null>(null)
   const [configTab,    setConfigTab]    = useState<'config' | 'preview'>('config')
-  const [showAIModal,  setShowAIModal]  = useState(false)
+  const [rightDrawer,  setRightDrawer]  = useState<RightDrawer>(null)
+
+  const toggleDrawer = (panel: NonNullable<RightDrawer>) =>
+    setRightDrawer((cur) => (cur === panel ? null : panel))
 
   // ── Undo/Redo ────────────────────────────────────────────────────────────
   const history = useFlowHistory()
@@ -201,26 +212,24 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
       toast.error('Workflow is incomplete', { description: 'Add a source node with a URL and an output node.' })
       return
     }
-    const hasExport = nodes.some((n) => n.type === 'file-export')
     const exportNode = nodes.find((n) => n.type === 'file-export')
-    if (hasExport && !(exportNode?.data as { exportJson?: boolean; exportExcel?: boolean; exportCsv?: boolean })?.exportJson
-      && !(exportNode?.data as { exportJson?: boolean; exportExcel?: boolean; exportCsv?: boolean })?.exportExcel
-      && !(exportNode?.data as { exportJson?: boolean; exportExcel?: boolean; exportCsv?: boolean })?.exportCsv) {
+    const exportData = exportNode?.data as { exportJson?: boolean; exportExcel?: boolean; exportCsv?: boolean } | undefined
+    if (exportNode && !exportData?.exportJson && !exportData?.exportExcel && !exportData?.exportCsv) {
       toast.error('No export format selected', { description: 'Enable JSON, Excel, or CSV in the File Export node.' })
       return
     }
     if (onSave) { onSave(nodes, edges); setIsDirty(false) }
     jobStore.initJob(config, workflowName ?? projectName)
     window.electronAPI.startWorkflow(config).catch(() => {})
-    toast.success('Workflow started!', {
-      description: (nodes.find((n) => ['browser-source','http-source','api-source'].includes(n.type ?? ''))?.data as { url?: string })?.url,
-    })
-    navigate('/progress')
-  }, [nodes, edges, jobStore, navigate, onSave, projectId, projectName, workflowId, workflowName])
+    // Open execution panel inline — no page redirect
+    setConfigNodeId(null)
+    setRightDrawer('execution')
+  }, [nodes, edges, jobStore, onSave, projectId, projectName, workflowId, workflowName])
 
   // ── Running state ─────────────────────────────────────────────────────────
   const activeJob     = useJobStore((s) => s.activeJob)
   const isRunning     = activeJob?.status === 'running'
+  const isPaused      = activeJob?.status === 'paused'
   const nodeStatusMap = useMemo(() => {
     if (!activeJob) return {}
     return Object.fromEntries(
@@ -228,15 +237,25 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
     )
   }, [activeJob])
 
-  // ── AI generate ───────────────────────────────────────────────────────────
-  const handleAIGenerate = useCallback(async (prompt: string) => {
+  // Open execution drawer whenever a new job starts (tracked by workflowId only)
+  const lastJobId = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const id = activeJob?.workflowId
+    if (id && id !== lastJobId.current) {
+      lastJobId.current = id
+      setRightDrawer('execution')
+    }
+  }, [activeJob])
+
+  // ── AI generate ─────────────────────────────────────────────────────────
+  const handleAIGenerate = useCallback(async (prompt: string): Promise<string | null> => {
     if (settings.aiProvider === 'none' || !settings.aiApiKey) {
-      toast.error('AI not configured', { description: 'Add an API key in Settings → AI.' })
-      return
+      return 'AI not configured. Open Settings → AI to add a key.'
     }
     try {
       const result = await window.electronAPI.generateWorkflow(prompt)
-      if (!result) { toast.error('AI could not generate a workflow'); return }
+      if (!result) return 'AI could not generate a workflow. Please try again.'
+      if ('__error' in result) return result.message
       history.push(currentSnap())
       setNodes((result.nodes as Node[]).map((n, i) => ({
         ...n,
@@ -244,8 +263,9 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
       })))
       setEdges(result.edges as Edge[])
       toast.success('Workflow generated by AI!')
+      return null
     } catch {
-      toast.error('AI generation failed')
+      return 'AI generation failed. Please try again.'
     }
   }, [settings, history, currentSnap])
 
@@ -341,14 +361,32 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
           {/* Separator */}
           <div className="w-px h-5 bg-[#1e2235] shrink-0" />
 
-          {/* AI Generate */}
+          {/* AI toggle */}
           <TBtn
-            onClick={() => setShowAIModal(true)}
-            className="text-pink-400 border-pink-500/30 bg-pink-950/20 hover:border-pink-500/60 hover:bg-pink-950/40 hover:text-pink-300"
+            onClick={() => { setConfigNodeId(null); toggleDrawer('ai') }}
+            className={cn(
+              rightDrawer === 'ai'
+                ? 'text-pink-300 border-pink-500/60 bg-pink-950/40'
+                : 'text-pink-400 border-pink-500/30 bg-pink-950/20 hover:border-pink-500/60 hover:bg-pink-950/40 hover:text-pink-300',
+            )}
             title="Build workflow with AI"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">AI</span>
+          </TBtn>
+
+          {/* History toggle */}
+          <TBtn
+            onClick={() => { setConfigNodeId(null); toggleDrawer('history') }}
+            className={cn(
+              rightDrawer === 'history'
+                ? 'text-indigo-300 border-indigo-500/60 bg-indigo-950/40'
+                : 'text-indigo-400 border-indigo-500/20 hover:border-indigo-500/50 hover:text-indigo-300',
+            )}
+            title="Run history"
+          >
+            <History className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">History</span>
           </TBtn>
 
           {/* Reset */}
@@ -380,25 +418,50 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
           )}
 
           {/* Run / Pause / Stop */}
-          {isRunning ? (
+          {(isRunning || isPaused) ? (
             <div className="flex items-center gap-1 shrink-0">
+              {/* Show execution panel button */}
+              <button
+                onClick={() => { setConfigNodeId(null); setRightDrawer('execution') }}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all',
+                  'border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20',
+                  rightDrawer === 'execution' && 'bg-indigo-500/20 border-indigo-500/60',
+                )}
+                title="View execution progress"
+              >
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span className="hidden sm:inline">{isPaused ? 'Paused' : 'Running…'}</span>
+              </button>
+
+              {/* Pause / Resume */}
               <button
                 onClick={async () => {
-                  jobStore.setStatus('paused')
-                  await window.electronAPI.pauseWorkflow()
-                  toast.info('Paused')
+                  if (isPaused) {
+                    jobStore.setStatus('running')
+                    await window.electronAPI.resumeWorkflow()
+                    toast.info('Resumed')
+                  } else {
+                    jobStore.setStatus('paused')
+                    await window.electronAPI.pauseWorkflow()
+                    toast.info('Paused')
+                  }
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white bg-amber-600 hover:bg-amber-500 transition-colors"
+                title={isPaused ? 'Resume' : 'Pause'}
+                className="w-7 h-7 flex items-center justify-center rounded-xl border border-[#2a2e45] text-slate-400 hover:text-white hover:border-amber-500/50 hover:bg-amber-500/10 transition-all"
               >
-                <Pause className="w-3.5 h-3.5" /> Pause
+                {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
               </button>
+
+              {/* Stop */}
               <button
                 onClick={async () => {
                   await window.electronAPI.stopWorkflow()
                   jobStore.stopJob()
-                  toast.warning('Stopped')
+                  toast.warning('Workflow stopped')
                 }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-white bg-red-700 hover:bg-red-600 transition-colors"
+                title="Stop"
+                className="w-7 h-7 flex items-center justify-center rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/15 hover:border-red-500/50 transition-all"
               >
                 <Square className="w-3.5 h-3.5" />
               </button>
@@ -408,11 +471,12 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
               onClick={handleRun}
               title={flowValid ? 'Run workflow (⌘↵)' : 'Complete the workflow first'}
               className={cn(
-                'flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[11px] font-bold text-white transition-all shrink-0',
+                'flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[11px] font-bold text-white transition-all duration-150 shrink-0',
                 flowValid
-                  ? 'bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-900/40'
-                  : 'bg-indigo-600/30 cursor-default',
+                  ? 'bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-900/40 active:scale-95'
+                  : 'bg-indigo-600/25 text-indigo-300/50 cursor-not-allowed',
               )}
+              disabled={!flowValid}
             >
               <Play className="w-3.5 h-3.5 fill-white" />
               <span className="hidden sm:inline">Run</span>
@@ -475,24 +539,30 @@ function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes
             </ReactFlow>
           </div>
 
-          {/* Config panel — outside canvas, slides as a column */}
-          <NodeConfigPanel
-            nodeId={configNodeId}
-            nodes={nodes}
-            defaultTab={configTab}
-            onClose={() => { setConfigNodeId(null); setConfigTab('config') }}
-            onUpdateNodeData={handleUpdateNodeData}
-            onDeleteNode={handleDeleteNode}
-          />
+          {/* Right panel — node config takes priority; execution/ai/history share the slot */}
+          {configNodeId ? (
+            <NodeConfigPanel
+              nodeId={configNodeId}
+              nodes={nodes}
+              defaultTab={configTab}
+              onClose={() => { setConfigNodeId(null); setConfigTab('config') }}
+              onUpdateNodeData={handleUpdateNodeData}
+              onDeleteNode={handleDeleteNode}
+            />
+          ) : rightDrawer === 'execution' ? (
+            <ExecutionPanel onClose={() => setRightDrawer(null)} />
+          ) : rightDrawer === 'ai' ? (
+            <AIDrawerPanel
+              onClose={() => setRightDrawer(null)}
+              onGenerate={handleAIGenerate}
+              apiConfigured={settings.aiProvider !== 'none' && !!settings.aiApiKey}
+            />
+          ) : rightDrawer === 'history' ? (
+            <HistoryDrawerPanel onClose={() => setRightDrawer(null)} />
+          ) : null}
         </div>
       </div>
 
-      {showAIModal && (
-        <AIPromptModal
-          onClose={() => setShowAIModal(false)}
-          onSubmit={handleAIGenerate}
-        />
-      )}
     </NodeDetailProvider>
     </NodeStatusProvider>
   )

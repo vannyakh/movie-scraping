@@ -29,6 +29,8 @@ Rules:
 - Position nodes left-to-right: source at x=40, then +340 for each step, y=120
 - Use unique IDs like "browser-source-1", "link-extractor-1", etc.`
 
+export type AIError = { __error: 'rate_limit' | 'auth' | 'unknown'; message: string }
+
 async function callAI(provider: string, apiKey: string, model: string, prompt: string): Promise<string> {
   if (provider === 'anthropic') {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -45,7 +47,12 @@ async function callAI(provider: string, apiKey: string, model: string, prompt: s
         messages: [{ role: 'user', content: prompt }],
       }),
     })
-    if (!res.ok) throw new Error(`Anthropic API error: ${res.status}`)
+    if (!res.ok) {
+      const err = new Error(`Anthropic API error: ${res.status}`) as Error & { code?: string }
+      if (res.status === 429) err.code = 'rate_limit'
+      else if (res.status === 401) err.code = 'auth'
+      throw err
+    }
     const json = await res.json() as { content: Array<{ text: string }> }
     return json.content[0]?.text ?? '{}'
   }
@@ -65,7 +72,12 @@ async function callAI(provider: string, apiKey: string, model: string, prompt: s
     }),
   })
 
-  if (!res.ok) throw new Error(`OpenAI API error: ${res.status}`)
+  if (!res.ok) {
+    const err = new Error(`OpenAI API error: ${res.status}`) as Error & { code?: string }
+    if (res.status === 429) err.code = 'rate_limit'
+    else if (res.status === 401) err.code = 'auth'
+    throw err
+  }
   const json = await res.json() as { choices: Array<{ message: { content: string } }> }
   return json.choices[0]?.message?.content ?? '{}'
 }
@@ -74,7 +86,7 @@ export function registerAIIpc(): void {
   ipcMain.handle('ai:generateWorkflow', async (_event, prompt: string) => {
     try {
       const ai = await useSettingsStore()
-      if (!ai) return null
+      if (!ai) return { __error: 'auth', message: 'AI not configured. Add an API key in Settings.' } satisfies AIError
 
       const rawJson = await callAI(ai.provider, ai.apiKey, ai.model, prompt)
 
@@ -83,7 +95,14 @@ export function registerAIIpc(): void {
       return JSON.parse(clean) as { nodes: unknown[]; edges: unknown[] }
     } catch (err) {
       console.error('ai:generateWorkflow error:', err)
-      return null
+      const code = (err as { code?: string }).code
+      if (code === 'rate_limit') {
+        return { __error: 'rate_limit', message: 'Rate limit exceeded. Please wait a moment before retrying.' } satisfies AIError
+      }
+      if (code === 'auth') {
+        return { __error: 'auth', message: 'Invalid API key. Check your key in Settings → AI.' } satisfies AIError
+      }
+      return { __error: 'unknown', message: 'AI generation failed. Please try again.' } satisfies AIError
     }
   })
 }

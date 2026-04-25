@@ -42,7 +42,7 @@ declare global {
       resumeWorkflow:   ()                           => Promise<void>
 
       // AI
-      generateWorkflow: (prompt: string)             => Promise<{ nodes: unknown[]; edges: unknown[] } | null>
+      generateWorkflow: (prompt: string)             => Promise<{ nodes: unknown[]; edges: unknown[] } | { __error: string; message: string } | null>
 
       // Utilities
       openPath:     (filePath: string)               => Promise<void>
