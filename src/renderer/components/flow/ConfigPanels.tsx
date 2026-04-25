@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useSettingsStore } from '@/store/settingsStore'
 import {
   Plus, X, GripVertical, FolderOpen, ShieldCheck, Cookie,
   MousePointerClick, Keyboard, Clock, ScrollText, ChevronDown,
@@ -788,12 +789,63 @@ export function AIExtractorPanel({ id, data: d, update }: {
   id: string; data: AIExtractorData
   update: (id: string, patch: Partial<AIExtractorData>) => void
 }) {
+  const { aiProvider, aiModel: globalModel, aiApiKey } = useSettingsStore(s => s.settings)
+  const [models,  setModels]  = useState<string[]>([])
+  const [fetching, setFetching] = useState(false)
+  const [fetchErr, setFetchErr] = useState<string | null>(null)
+
   const fields = d.fields ?? []
 
-  const addField = () =>
-    update(id, { fields: [...fields, { id: `f-${Date.now()}`, label: 'New Field' }] })
-  const removeField = (fid: string) =>
-    update(id, { fields: fields.filter(f => f.id !== fid) })
+  // The model stored on the node — fall back to the global default when empty
+  const activeModel = d.model || globalModel
+
+  const fetchModels = useCallback(async () => {
+    if (aiProvider === 'none' || !aiApiKey) {
+      setModels([])
+      setFetchErr('Set an AI provider and API key in Settings first.')
+      return
+    }
+    setFetching(true)
+    setFetchErr(null)
+    try {
+      const list = await window.electronAPI.fetchModels(aiProvider, aiApiKey)
+      if (list && list.length > 0) {
+        setModels(list)
+        // If node's model isn't in the new list, reset it to the global default
+        if (d.model && !list.includes(d.model)) {
+          update(id, { model: list.includes(globalModel) ? globalModel : list[0] })
+        }
+      } else {
+        setFetchErr('No models returned. Check your API key.')
+      }
+    } catch {
+      setFetchErr('Failed to fetch models.')
+    } finally {
+      setFetching(false)
+    }
+  }, [aiProvider, aiApiKey, d.model, globalModel, id, update])
+
+  // Auto-fetch on mount and whenever the global provider / key changes
+  useEffect(() => { fetchModels() }, [aiProvider, aiApiKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ensure node model is in sync: if it was never set, seed it from global
+  useEffect(() => {
+    if (!d.model && globalModel) update(id, { model: globalModel })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addField    = () => update(id, { fields: [...fields, { id: `f-${Date.now()}`, label: 'New Field' }] })
+  const removeField = (fid: string) => update(id, { fields: fields.filter(f => f.id !== fid) })
+
+  // Displayed list: fetched models if available, otherwise show the currently selected one
+  const displayModels = models.length > 0 ? models : (activeModel ? [activeModel] : [])
+
+  const providerBadge = aiProvider === 'none'
+    ? null
+    : <span className={cn(
+        'text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider',
+        aiProvider === 'openai'    && 'bg-emerald-600/20 text-emerald-300',
+        aiProvider === 'anthropic' && 'bg-violet-600/20 text-violet-300',
+      )}>{aiProvider}</span>
 
   return (
     <div className="space-y-4">
@@ -807,13 +859,56 @@ export function AIExtractorPanel({ id, data: d, update }: {
         <input className={inputCls} placeholder="_html" value={d.inputField}
           onChange={e => update(id, { inputField: e.target.value })} />
       </Field>
-      <Field label="AI Model">
-        <select className={inputCls} value={d.model}
+
+      {/* Model picker — synced with global AI config */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              AI Model
+            </label>
+            {providerBadge}
+            {!d.model && globalModel && (
+              <span className="text-[9px] text-slate-600 italic">using global default</span>
+            )}
+          </div>
+          <button
+            onClick={fetchModels}
+            disabled={fetching || aiProvider === 'none'}
+            className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 disabled:opacity-40 transition-colors">
+            <ArrowRight className={cn('w-3 h-3 rotate-90', fetching && 'animate-spin')} />
+            {fetching ? 'Fetching…' : 'Refresh'}
+          </button>
+        </div>
+
+        {fetchErr ? (
+          <div className="rounded-lg bg-red-600/8 border border-red-500/20 px-3 py-2 mb-1">
+            <p className="text-[10px] text-red-400">{fetchErr}</p>
+          </div>
+        ) : null}
+
+        <select
+          className={inputCls}
+          value={activeModel}
           onChange={e => update(id, { model: e.target.value })}>
-          {['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku-20240307', 'claude-3-5-sonnet-20241022'].map(m =>
-            <option key={m}>{m}</option>)}
+          {displayModels.map(m => (
+            <option key={m} value={m}>
+              {m}{m === globalModel ? ' (global default)' : ''}
+            </option>
+          ))}
+          {/* If the active model isn't in the list yet, show it */}
+          {activeModel && !displayModels.includes(activeModel) && (
+            <option value={activeModel}>{activeModel}</option>
+          )}
         </select>
-      </Field>
+
+        {aiProvider === 'none' && (
+          <p className="text-[10px] text-slate-600 mt-1">
+            Configure AI provider in <span className="text-indigo-400">Settings → AI</span> to enable.
+          </p>
+        )}
+      </div>
+
       <SectionTitle>Output Fields</SectionTitle>
       <p className="text-[10px] text-slate-500 -mt-2">Name the fields you want in the output records.</p>
       <div className="space-y-2">
