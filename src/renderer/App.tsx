@@ -1,10 +1,8 @@
-import { lazy, Suspense } from 'react'
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
+import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import Layout from '@/components/layout/Layout'
 
-// Code-split each page so the initial bundle is as small as possible.
-// The flow canvas (ReactFlow + DnD + heavy deps) only loads when needed.
 const Dashboard     = lazy(() => import('@/pages/Dashboard'))
 const Projects      = lazy(() => import('@/pages/Projects'))
 const ProjectCreate = lazy(() => import('@/pages/ProjectCreate'))
@@ -23,9 +21,27 @@ function PageSpinner() {
   )
 }
 
+function TrayQuickTaskBridge() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!window.electronAPI) return
+
+    return window.electronAPI.onTrayQuickTask((task) => {
+      if (task === 'open-dashboard') navigate('/')
+      if (task === 'open-projects') navigate('/projects')
+      if (task === 'open-task-jobs') navigate('/task-jobs')
+      if (task === 'open-settings') navigate('/settings')
+    })
+  }, [navigate])
+
+  return null
+}
+
 export default function App() {
   return (
     <HashRouter>
+      <TrayQuickTaskBridge />
       <Suspense fallback={<PageSpinner />}>
         <Routes>
           {/* Full-screen flow builder — no sidebar chrome */}

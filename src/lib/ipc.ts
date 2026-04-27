@@ -85,6 +85,7 @@ declare global {
       onComplete:   (cb: (r: JobResult)       => void) => () => void
       onError:      (cb: (err: string)        => void) => () => void
       onNodeStatus: (cb: (s: NodeStatus)      => void) => () => void
+      onTrayQuickTask: (cb: (task: 'open-dashboard' | 'open-projects' | 'open-task-jobs' | 'open-settings') => void) => () => void
 
       // Legacy (kept for backward compat)
       startScraping:  (config: ScraperConfig) => Promise<{ success: boolean; error?: string } & Partial<ScraperResult>>

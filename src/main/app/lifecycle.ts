@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import { createMainWindow } from '../windows/create-main-window'
 import { registerAllIpc, setMainWindow } from '../ipc'
 import { closeDatabase } from '../db'
+import { setupTray, teardownTray } from './tray'
 
 export function attachAppLifecycle(): void {
   app.on('window-all-closed', () => {
@@ -18,6 +19,7 @@ export function attachAppLifecycle(): void {
   })
 
   app.on('before-quit', () => {
+    teardownTray()
     void closeDatabase()
   })
 
@@ -25,5 +27,6 @@ export function attachAppLifecycle(): void {
     registerAllIpc()
     const win = createMainWindow()
     setMainWindow(win)
+    setupTray()
   })
 }

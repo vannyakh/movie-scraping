@@ -81,6 +81,11 @@ const api = {
     ipcRenderer.on('workflow:nodeStatus', h)
     return () => ipcRenderer.off('workflow:nodeStatus', h)
   },
+  onTrayQuickTask: (cb: (task: string) => void) => {
+    const h = (_: unknown, v: unknown) => cb(v as string)
+    ipcRenderer.on('tray:quickTask', h)
+    return () => ipcRenderer.off('tray:quickTask', h)
+  },
 
   // ─── Legacy: old scrape events kept for backward compat ───────────────────
   startScraping:  (config: unknown) => ipcRenderer.invoke('scrape:start', config),
