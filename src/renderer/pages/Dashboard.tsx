@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Film, PlusCircle, CheckCircle, Clock, TrendingUp, Zap, Workflow } from 'lucide-react'
+import { Film, CheckCircle, Clock, TrendingUp, Zap, Workflow } from 'lucide-react'
 import { useScrapingStore } from '@/store/scrapingStore'
 import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -58,36 +58,6 @@ export default function Dashboard() {
             <div className={cn('text-3xl font-bold', color)}>{value}</div>
           </div>
         ))}
-      </div>
-
-      {/* CTA */}
-      <div className="mb-8 p-6 rounded-xl bg-gradient-to-br from-indigo-600/20 to-purple-600/10 border border-indigo-500/30">
-        <div className="mb-4">
-          <div className="text-lg font-bold text-slate-100 mb-1">Start a new scraping project</div>
-          <div className="text-sm text-slate-400">Create a project and build your pipeline with the visual Flow Builder</div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={() => navigate('/projects/new')}
-            className="flex items-center gap-2.5 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition-colors text-sm"
-          >
-            <PlusCircle className="w-4 h-4 shrink-0" />
-            <div className="text-left">
-              <div className="font-bold text-sm">New Project</div>
-              <div className="text-xs text-indigo-200 font-normal">Set up & open flow builder</div>
-            </div>
-          </button>
-          <button
-            onClick={() => navigate('/projects')}
-            className="flex items-center gap-2.5 px-4 py-3 bg-violet-600/30 hover:bg-violet-600/50 border border-violet-500/40 hover:border-violet-500/70 text-white font-semibold rounded-lg transition-all text-sm"
-          >
-            <Workflow className="w-4 h-4 shrink-0 text-violet-300" />
-            <div className="text-left">
-              <div className="font-bold text-sm text-violet-200">All Projects</div>
-              <div className="text-xs text-violet-300/70 font-normal">View & manage projects</div>
-            </div>
-          </button>
-        </div>
       </div>
 
       {/* Quick actions */}

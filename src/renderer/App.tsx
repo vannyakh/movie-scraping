@@ -9,6 +9,7 @@ import ProgressPage   from '@/pages/ProgressPage'
 import Results        from '@/pages/Results'
 import HistoryPage    from '@/pages/History'
 import Settings       from '@/pages/Settings'
+import TaskJobs       from '@/pages/TaskJobs'
 
 export default function App() {
   if (!window.electronAPI) {
@@ -37,9 +38,11 @@ export default function App() {
           <Route path="results"     element={<Results />}       />
           <Route path="history"     element={<HistoryPage />}   />
           <Route path="settings"    element={<Settings />}      />
+          <Route path="task-jobs"    element={<TaskJobs />}      />
           {/* Legacy redirects */}
           <Route path="new"  element={<Navigate to="/projects/new" replace />} />
           <Route path="flow" element={<Navigate to="/projects"     replace />} />
+          
         </Route>
       </Routes>
     </HashRouter>

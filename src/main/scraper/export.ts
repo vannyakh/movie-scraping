@@ -33,7 +33,7 @@ export async function saveResults(
   if (exportExcel) {
     result.excelPath = path.join(outputDir, `movies-${stamp}.xlsx`)
     const wb    = new ExcelJS.Workbook()
-    wb.creator  = 'MovieScraping'; wb.created = new Date()
+    wb.creator  = 'AgentScraper'; wb.created = new Date()
     const sheet = wb.addWorksheet('Movies')
     sheet.columns = [
       { header: 'Title',       key: 'title',       width: 42 },
