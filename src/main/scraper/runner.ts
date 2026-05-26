@@ -4,8 +4,8 @@ import type {
   LogCallback,
   MovieBatchCallback,
   MovieData,
-  ProgressCallback,
   ScraperConfig,
+  ScraperProgress,
   ScraperResult,
 } from '@shared/ipc-types'
 import type { ScrapeController } from './controller'
@@ -17,7 +17,7 @@ import { saveResults } from './export'
 
 export async function runScraper(
   config:       ScraperConfig,
-  onProgress:   ProgressCallback,
+  onProgress:   (p: ScraperProgress) => void,
   onLog:        LogCallback,
   onMovieBatch: MovieBatchCallback,
   controller:   ScrapeController,

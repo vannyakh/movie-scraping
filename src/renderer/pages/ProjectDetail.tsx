@@ -4,14 +4,16 @@ import { FlowCanvas } from '@/components/flow/FlowCanvas'
 import type { Node, Edge } from '@xyflow/react'
 
 export default function ProjectDetail() {
-  const { id }     = useParams<{ id: string }>()
-  const navigate   = useNavigate()
-  const getProject = useProjectStore(s => s.getProject)
-  const update     = useProjectStore(s => s.updateProject)
+  const { id }          = useParams<{ id: string }>()
+  const navigate        = useNavigate()
+  const getProject      = useProjectStore(s => s.getProject)
+  const getFirstWorkflow = useProjectStore(s => s.getFirstWorkflow)
+  const updateWorkflow   = useProjectStore(s => s.updateWorkflow)
 
-  const project = id ? getProject(id) : null
+  const project  = id ? getProject(id) : null
+  const workflow = id ? getFirstWorkflow(id) : null
 
-  if (!project) {
+  if (!project || !workflow) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3 text-slate-500">
         <p className="text-sm">Project not found.</p>
@@ -26,15 +28,17 @@ export default function ProjectDetail() {
   }
 
   const handleSave = (nodes: Node[], edges: Edge[]) => {
-    update(project.id, { nodes, edges })
+    updateWorkflow(project.id, workflow.id, { nodes, edges })
   }
 
   return (
     <FlowCanvas
       projectId={project.id}
       projectName={project.name}
-      initialNodes={project.nodes}
-      initialEdges={project.edges}
+      workflowId={workflow.id}
+      workflowName={workflow.name}
+      initialNodes={workflow.nodes}
+      initialEdges={workflow.edges}
       onSave={handleSave}
     />
   )

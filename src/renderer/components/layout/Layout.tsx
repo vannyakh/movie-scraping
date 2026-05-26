@@ -1,40 +1,22 @@
-import { useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import Sidebar from './Sidebar'
-import { useScrapingStore } from '@/store/scrapingStore'
+import { useIpcEvents } from '@/hooks/useIpcEvents'
 
 export default function Layout() {
-  const store = useScrapingStore()
-
-  /* ── Wire up all IPC push events once at the layout level ── */
-  useEffect(() => {
-    if (!window.electronAPI) return
-
-    const offs = [
-      window.electronAPI.onProgress((p) => store.updateProgress(p)),
-      window.electronAPI.onLog((msg)     => store.appendLog(msg)),
-      window.electronAPI.onMovieBatch((movies) => store.appendMovies(movies)),
-      window.electronAPI.onComplete((result)   => store.completeJob(result)),
-      window.electronAPI.onError((err)         => store.failJob(err)),
-    ]
-    return () => offs.forEach((off) => off())
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  useIpcEvents()
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0f1117]">
+    <div className="flex h-screen overflow-hidden bg-[#0d0f1a]">
       <Sidebar />
-
       <main className="flex-1 overflow-y-auto">
         <Outlet />
       </main>
-
       <Toaster
         position="bottom-right"
         theme="dark"
         toastOptions={{
-          style: { background: '#21253a', border: '1px solid #2e3350', color: '#f1f5f9' },
+          style: { background: '#12141e', border: '1px solid #1e2235', color: '#f1f5f9' },
         }}
       />
     </div>

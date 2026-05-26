@@ -9,6 +9,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: { '@shared': sharedAlias } },
     build: {
+      // @ts-expect-error electron-vite v5 BuildEnvironmentOptions doesn't expose rollupOptions type
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },
       },
@@ -18,6 +19,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: { '@shared': sharedAlias } },
     build: {
+      // @ts-expect-error electron-vite v5 BuildEnvironmentOptions doesn't expose rollupOptions type
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/preload.ts') },
         output: {
@@ -30,6 +32,7 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     build: {
+      // @ts-expect-error electron-vite v5 BuildEnvironmentOptions doesn't expose outDir type
       outDir: resolve(__dirname, 'out/renderer'),
     },
     resolve: {

@@ -1,189 +1,223 @@
-import { useCallback, useRef, useState, useEffect } from 'react'
+import { useCallback, useRef, useState, useEffect, useMemo } from 'react'
+import { Group, Panel, Separator, type PanelImperativeHandle } from 'react-resizable-panels'
 import {
-  ReactFlow,
-  ReactFlowProvider,
-  Panel,
-  Background,
-  BackgroundVariant,
-  MiniMap,
-  SelectionMode,
-  addEdge,
-  applyNodeChanges,
-  applyEdgeChanges,
+  ReactFlow, ReactFlowProvider, Background, BackgroundVariant,
+  MiniMap, SelectionMode, addEdge, applyNodeChanges, applyEdgeChanges,
   useReactFlow,
-  type Node,
-  type Edge,
-  type OnConnect,
-  type NodeChange,
-  type EdgeChange,
+  type Node, type Edge, type OnConnect, type NodeChange, type EdgeChange,
 } from '@xyflow/react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
-  Play, RotateCcw, Save, ArrowLeft,
-  CheckCircle2, AlertCircle, Loader2,
-  Undo2, Redo2,
-  Maximize2, ZoomIn, ZoomOut,
-  MousePointer2, Hand,
+  Play, RotateCcw, Save, ArrowLeft, CheckCircle2, AlertCircle, Loader2,
+  Undo2, Redo2, Sparkles, Pause, Square, Workflow, History,
 } from 'lucide-react'
 import {
-  nodeTypes, edgeTypes, defaultNodeData, NodeDetailProvider,
-  DEFAULT_DETAIL_FIELDS, INITIAL_NODES, INITIAL_EDGES,
+  nodeTypes, edgeTypes, defaultNodeData, NodeDetailProvider, NodeStatusProvider,
+  DEFAULT_DETAIL_FIELDS, INITIAL_NODES, INITIAL_EDGES, NODE_COLOR_MAP,
 } from './nodes'
-import { NodeConfigPanel } from './NodeConfigPanel'
-import { NodePalette } from './NodePalette'
-import { flowToConfig, isFlowValid } from './flowToConfig'
-import { useScrapingStore } from '@/store/scrapingStore'
+import { NodeConfigPanel }    from './NodeConfigPanel'
+import { NodePalette }        from './NodePalette'
+import { FlowControls }       from './FlowControls'
+import { AIDrawerPanel }      from './AIDrawerPanel'
+import { HistoryDrawerPanel } from './HistoryDrawerPanel'
+import { ExecutionPanel }     from './ExecutionPanel'
+import { flowToWorkflow, isFlowValid } from './flowToWorkflow'
+import { useFlowHistory, type FlowSnapshot } from '@/hooks/useFlowHistory'
+import { useJobStore } from '@/store/jobStore'
+import { useSettingsStore } from '@/store/settingsStore'
+import { useIpcEvents } from '@/hooks/useIpcEvents'
 import { cn } from '@/lib/utils'
+
+type RightDrawer = 'ai' | 'history' | 'execution' | null
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface FlowCanvasProps {
   projectId?:    string
   projectName?:  string
+  workflowId?:   string
+  workflowName?: string
   initialNodes?: Node[]
   initialEdges?: Edge[]
   onSave?: (nodes: Node[], edges: Edge[]) => void
 }
 
-interface Snapshot { nodes: Node[]; edges: Edge[] }
+// ─── Toolbar button variants ──────────────────────────────────────────────────
 
-// ─── useFlowHistory ───────────────────────────────────────────────────────────
-
-const MAX_HISTORY = 60
-
-function useFlowHistory() {
-  const past   = useRef<Snapshot[]>([])
-  const future = useRef<Snapshot[]>([])
-  const [canUndo, setCanUndo] = useState(false)
-  const [canRedo, setCanRedo] = useState(false)
-
-  const syncFlags = () => {
-    setCanUndo(past.current.length > 0)
-    setCanRedo(future.current.length > 0)
+function TBtn({
+  onClick, disabled, title, className, children,
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { title?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={cn(
+        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-medium transition-all duration-150 shrink-0',
+        'border border-[#2a2e45] bg-[#1a1d2e] text-slate-400',
+        'hover:text-slate-100 hover:border-[#3a3e55] hover:bg-[#1e2235]',
+        'disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-[#1a1d2e] disabled:hover:border-[#2a2e45] disabled:hover:text-slate-400',
+        className,
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+function sanitizeNodeData(type: string, raw: Record<string, unknown>): Record<string, unknown> {
+  // Merge with defaults so every field exists
+  const d: Record<string, unknown> = { ...(defaultNodeData[type] ?? {}), ...raw }
+  if (['http-source', 'api-source', 'webhook'].includes(type)) {
+    if (typeof d.headers === 'object' && d.headers !== null) {
+      d.headers = JSON.stringify(d.headers)
+    }
+    if (typeof d.headers !== 'string') d.headers = '{}'
   }
 
-  const push = useCallback((snapshot: Snapshot) => {
-    past.current = [...past.current.slice(-(MAX_HISTORY - 1)), snapshot]
-    future.current = []
-    syncFlags()
-  }, [])
+  switch (type) {
+    case 'transform': {
+      // omit MUST be a comma-separated string — AI often returns string[]
+      if (Array.isArray(d.omit)) d.omit = (d.omit as string[]).join(',')
+      if (typeof d.omit !== 'string') d.omit = ''
+      if (!Array.isArray(d.renames)) d.renames = []
+      if (!Array.isArray(d.computed)) d.computed = []
+      break
+    }
+    case 'filter': {
+      if (!Array.isArray(d.conditions)) d.conditions = []
+      d.conditions = (d.conditions as unknown[]).map((c, i) => {
+        const o = (typeof c === 'object' && c !== null ? c : {}) as Record<string, unknown>
+        return {
+          id:       String(o.id       ?? `c${i + 1}`),
+          field:    String(o.field    ?? ''),
+          operator: String(o.operator ?? 'exists'),
+          value:    String(o.value    ?? ''),
+        }
+      })
+      if (d.logic !== 'AND' && d.logic !== 'OR') d.logic = 'AND'
+      break
+    }
+    case 'link-extractor': {
+      if (typeof d.limit !== 'number') d.limit = Number(d.limit) || 200
+      break
+    }
+    case 'browser-source': {
+      if (typeof d.delayMs       !== 'number')  d.delayMs       = Number(d.delayMs) || 500
+      if (typeof d.headless      !== 'boolean') d.headless      = d.headless !== false
+      if (typeof d.cookies       !== 'string')  d.cookies       = ''
+      if (!['global','none','custom'].includes(d.proxyOverride as string)) d.proxyOverride = 'global'
+      if (typeof d.proxyUrl      !== 'string')  d.proxyUrl      = ''
+      if (!Array.isArray(d.actions))            d.actions       = []
+      break
+    }
+    case 'http-source': {
+      if (!['global','none','custom'].includes(d.proxyOverride as string)) d.proxyOverride = 'global'
+      if (typeof d.proxyUrl !== 'string') d.proxyUrl = ''
+      break
+    }
+    case 'api-source': {
+      if (typeof d.maxPages !== 'number') d.maxPages = Number(d.maxPages) || 1
+      if (!['global','none','custom'].includes(d.proxyOverride as string)) d.proxyOverride = 'global'
+      if (typeof d.proxyUrl !== 'string') d.proxyUrl = ''
+      break
+    }
+    case 'list-scraper': {
+      if (typeof d.maxPages !== 'number') d.maxPages = Number(d.maxPages) || 5
+      if (typeof d.maxItems !== 'number') d.maxItems = Number(d.maxItems) || 100
+      if (!['none','next-button','url-pattern','infinite-scroll'].includes(d.paginationType as string))
+        d.paginationType = 'next-button'
+      if (typeof d.nextPageSelector !== 'string') d.nextPageSelector = ''
+      if (typeof d.urlPattern       !== 'string') d.urlPattern       = ''
+      if (typeof d.startPage        !== 'number') d.startPage        = 1
+      if (typeof d.scrollDelay      !== 'number') d.scrollDelay      = 1500
+      if (typeof d.maxScrolls       !== 'number') d.maxScrolls       = 10
+      break
+    }
+    case 'field-extractor': {
+      if (!Array.isArray(d.fields) || (d.fields as unknown[]).length === 0) {
+        d.fields = DEFAULT_DETAIL_FIELDS.map((f) => ({ ...f }))
+      }
+      if (typeof d.urlField  !== 'string')  d.urlField  = '_url'
+      if (typeof d.delayMs   !== 'number')  d.delayMs   = Number(d.delayMs) || 300
+      if (typeof d.headless  !== 'boolean') d.headless  = d.headless !== false
+      if (typeof d.cookies   !== 'string')  d.cookies   = ''
+      if (!['global','none','custom'].includes(d.proxyOverride as string)) d.proxyOverride = 'global'
+      if (typeof d.proxyUrl  !== 'string')  d.proxyUrl  = ''
+      if (!Array.isArray(d.actions))        d.actions   = []
+      break
+    }
+    case 'ai-extractor': {
+      if (!Array.isArray(d.fields))         d.fields      = []
+      if (typeof d.instruction !== 'string') d.instruction = 'Extract the main content'
+      if (typeof d.inputField  !== 'string') d.inputField  = '_html'
+      if (typeof d.model       !== 'string') d.model       = 'gpt-4o-mini'
+      break
+    }
+    case 'file-export': {
+      if (typeof d.exportJson  !== 'boolean') d.exportJson  = Boolean(d.exportJson)
+      if (typeof d.exportExcel !== 'boolean') d.exportExcel = Boolean(d.exportExcel)
+      if (typeof d.exportCsv   !== 'boolean') d.exportCsv   = Boolean(d.exportCsv)
+      // Always have at least one format enabled
+      if (!d.exportJson && !d.exportExcel && !d.exportCsv) d.exportJson = true
+      if (typeof d.filename !== 'string') d.filename = 'output'
+      break
+    }
+    case 'webhook': {
+      if (typeof d.batchSize !== 'number') d.batchSize = Number(d.batchSize) || 100
+      break
+    }
+  }
 
-  const undo = useCallback((current: Snapshot, restore: (s: Snapshot) => void) => {
-    const prev = past.current[past.current.length - 1]
-    if (!prev) return
-    future.current = [current, ...future.current.slice(0, MAX_HISTORY - 1)]
-    past.current   = past.current.slice(0, -1)
-    restore(prev)
-    syncFlags()
-  }, [])
-
-  const redo = useCallback((current: Snapshot, restore: (s: Snapshot) => void) => {
-    const next = future.current[0]
-    if (!next) return
-    past.current   = [...past.current.slice(-(MAX_HISTORY - 1)), current]
-    future.current = future.current.slice(1)
-    restore(next)
-    syncFlags()
-  }, [])
-
-  return { push, undo, redo, canUndo, canRedo }
-}
-
-// ─── Custom controls panel ────────────────────────────────────────────────────
-
-function FlowControls() {
-  const { zoomIn, zoomOut, fitView } = useReactFlow()
-
-  const btn = cn(
-    'w-8 h-8 flex items-center justify-center rounded-lg',
-    'bg-[#1e2133] border border-[#2a2d3e]',
-    'text-slate-500 hover:text-slate-100 hover:border-[#3d4470] hover:bg-[#252840]',
-    'transition-all shadow-sm',
-  )
-
-  return (
-    <Panel position="bottom-left" className="flex gap-1 ml-2 mb-2">
-      <button
-        onClick={() => fitView({ padding: 0.2, duration: 300 })}
-        className={btn}
-        title="Fit view (F)"
-      >
-        <Maximize2 className="w-3.5 h-3.5" />
-      </button>
-      <button
-        onClick={() => zoomIn({ duration: 200 })}
-        className={btn}
-        title="Zoom in"
-      >
-        <ZoomIn className="w-3.5 h-3.5" />
-      </button>
-      <button
-        onClick={() => zoomOut({ duration: 200 })}
-        className={btn}
-        title="Zoom out"
-      >
-        <ZoomOut className="w-3.5 h-3.5" />
-      </button>
-    </Panel>
-  )
+  return d
 }
 
 // ─── Inner canvas ─────────────────────────────────────────────────────────────
 
-function Canvas({ projectId, projectName, initialNodes, initialEdges, onSave }: FlowCanvasProps) {
-  const navigate      = useNavigate()
-  const scrapingStore = useScrapingStore()
+function Canvas({ projectId, projectName, workflowId, workflowName, initialNodes, initialEdges, onSave }: FlowCanvasProps) {
+  const navigate     = useNavigate()
+  const jobStore     = useJobStore()
+  const { settings } = useSettingsStore()
   const wrapperRef    = useRef<HTMLDivElement>(null)
+  const rightPanelRef = useRef<PanelImperativeHandle | null>(null)
+  const [isDragging,  setIsDragging]  = useState(false)
+
+  // Wire up IPC → job store (safe to call multiple times; each adds its own listener set)
+  useIpcEvents()
 
   const [nodes, setNodes] = useState<Node[]>(initialNodes ?? INITIAL_NODES)
   const [edges, setEdges] = useState<Edge[]>(initialEdges ?? INITIAL_EDGES)
-  const {
-    screenToFlowPosition, updateNodeData, deleteElements, fitView,
-  } = useReactFlow()
+  const { screenToFlowPosition, updateNodeData, deleteElements, fitView } = useReactFlow()
 
   const [configNodeId, setConfigNodeId] = useState<string | null>(null)
   const [configTab,    setConfigTab]    = useState<'config' | 'preview'>('config')
+  const [rightDrawer,  setRightDrawer]  = useState<RightDrawer>(null)
+
+  const toggleDrawer = (panel: NonNullable<RightDrawer>) =>
+    setRightDrawer((cur) => (cur === panel ? null : panel))
+
+  const isRightPanelOpen = !!(configNodeId || rightDrawer)
+
+  // Collapse / expand the resizable panel in sync with open state
+  useEffect(() => {
+    if (isRightPanelOpen) rightPanelRef.current?.expand()
+    else                  rightPanelRef.current?.collapse()
+  }, [isRightPanelOpen])
 
   // ── Undo/Redo ────────────────────────────────────────────────────────────
   const history = useFlowHistory()
   const isApplyingHistory = useRef(false)
 
-  const restore = useCallback((snap: Snapshot) => {
+  const restore     = useCallback((snap: FlowSnapshot) => {
     isApplyingHistory.current = true
     setNodes(snap.nodes)
     setEdges(snap.edges)
     requestAnimationFrame(() => { isApplyingHistory.current = false })
   }, [])
 
-  const currentSnap  = useCallback((): Snapshot => ({ nodes, edges }), [nodes, edges])
-  const handleUndo   = useCallback(() => history.undo(currentSnap(), restore),  [history, currentSnap, restore])
-  const handleRedo   = useCallback(() => history.redo(currentSnap(), restore),  [history, currentSnap, restore])
-
-  // ── Interaction mode (select / pan) ──────────────────────────────────────
-  // lockedPanMode: user clicked the Hand button → always pan on drag
-  // spaceHeld:     Space is currently pressed  → temporarily pan on drag
-  const [lockedPanMode, setLockedPanMode] = useState(false)
-  const [spaceHeld,     setSpaceHeld]     = useState(false)
-  const isPanMode = lockedPanMode || spaceHeld
-
-  useEffect(() => {
-    const onDown = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat) return
-      const t = e.target as HTMLElement
-      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return
-      setSpaceHeld(true)
-    }
-    const onUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') setSpaceHeld(false)
-    }
-    window.addEventListener('keydown', onDown)
-    window.addEventListener('keyup',   onUp)
-    return () => {
-      window.removeEventListener('keydown', onDown)
-      window.removeEventListener('keyup',   onUp)
-    }
-  }, [])
+  const currentSnap = useCallback((): FlowSnapshot => ({ nodes, edges }), [nodes, edges])
+  const handleUndo  = useCallback(() => history.undo(currentSnap(), restore), [history, currentSnap, restore])
+  const handleRedo  = useCallback(() => history.redo(currentSnap(), restore), [history, currentSnap, restore])
 
   // ── Save ─────────────────────────────────────────────────────────────────
   const [isDirty,   setIsDirty]   = useState(false)
@@ -200,10 +234,7 @@ function Canvas({ projectId, projectName, initialNodes, initialEdges, onSave }: 
   useEffect(() => {
     if (!onSave || !isDirty) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-    autoSaveTimer.current = setTimeout(() => {
-      onSave(nodes, edges)
-      setIsDirty(false)
-    }, 3000)
+    autoSaveTimer.current = setTimeout(() => { onSave(nodes, edges); setIsDirty(false) }, 3000)
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
   }, [nodes, edges, isDirty, onSave])
 
@@ -213,32 +244,31 @@ function Canvas({ projectId, projectName, initialNodes, initialEdges, onSave }: 
     setIsSaving(true)
     onSave(nodes, edges)
     setIsDirty(false)
-    await new Promise(r => setTimeout(r, 300))
+    await new Promise((r) => setTimeout(r, 300))
     setIsSaving(false)
     setSaveLabel('saved')
-    toast.success('Project saved')
+    toast.success('Workflow saved')
     setTimeout(() => setSaveLabel('save'), 2000)
   }, [onSave, nodes, edges])
 
-  // ── React Flow change handlers ────────────────────────────────────────────
-
+  // ── React Flow handlers ───────────────────────────────────────────────────
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     if (!isApplyingHistory.current) {
       const hasDragEnd = changes.some(
-        c => c.type === 'position' && (c as NodeChange & { dragging?: boolean }).dragging === false,
+        (c) => c.type === 'position' && (c as NodeChange & { dragging?: boolean }).dragging === false,
       )
       if (hasDragEnd) history.push(currentSnap())
     }
-    setNodes(nds => applyNodeChanges(changes, nds))
+    setNodes((nds) => applyNodeChanges(changes, nds))
   }, [history, currentSnap])
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges(eds => applyEdgeChanges(changes, eds))
+    setEdges((eds) => applyEdgeChanges(changes, eds))
   }, [])
 
   const onConnect: OnConnect = useCallback((conn) => {
     if (!isApplyingHistory.current) history.push(currentSnap())
-    setEdges(eds => addEdge({ ...conn, type: 'custom', animated: true }, eds))
+    setEdges((eds) => addEdge({ ...conn, type: 'custom', animated: true }, eds))
   }, [history, currentSnap])
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -252,11 +282,20 @@ function Canvas({ projectId, projectName, initialNodes, initialEdges, onSave }: 
     if (!type || !(type in defaultNodeData)) return
     history.push(currentSnap())
     const position = screenToFlowPosition({ x: e.clientX, y: e.clientY })
-    const data = type === 'detail'
-      ? { fields: DEFAULT_DETAIL_FIELDS.map(f => ({ ...f })) }
+    const data = type === 'field-extractor'
+      ? { fields: DEFAULT_DETAIL_FIELDS.map((f) => ({ ...f })), urlField: '_url', headless: true, delayMs: 300 }
       : { ...defaultNodeData[type] }
-    setNodes(nds => [...nds, { id: `${type}-${Date.now()}`, type, position, data }])
+    const newId = `${type}-${Date.now()}`
+    setNodes((nds) => [...nds, { id: newId, type, position, data }])
+    setConfigNodeId(newId)
+    setConfigTab('config')
   }, [history, currentSnap, screenToFlowPosition])
+
+  // Open config on node click
+  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    setConfigNodeId(node.id)
+    setConfigTab('config')
+  }, [])
 
   const handleUpdateNodeData = useCallback((id: string, patch: Partial<object>) => {
     history.push(currentSnap())
@@ -271,306 +310,448 @@ function Canvas({ projectId, projectName, initialNodes, initialEdges, onSave }: 
 
   const handleReset = useCallback(() => {
     history.push(currentSnap())
-    setNodes(INITIAL_NODES.map(n => ({
+    setNodes(INITIAL_NODES.map((n) => ({
       ...n,
-      data: n.type === 'detail'
-        ? { fields: DEFAULT_DETAIL_FIELDS.map(f => ({ ...f })) }
+      data: n.type === 'field-extractor'
+        ? { fields: DEFAULT_DETAIL_FIELDS.map((f) => ({ ...f })), urlField: '_url', headless: true, delayMs: 300 }
         : { ...defaultNodeData[n.type!] },
     })))
     setEdges(INITIAL_EDGES)
     setConfigNodeId(null)
-    toast.info('Flow reset to default pipeline')
+    toast.info('Workflow reset')
   }, [history, currentSnap])
 
+  // ── Run ───────────────────────────────────────────────────────────────────
   const handleRun = useCallback(async () => {
-    const config = flowToConfig(nodes)
+    const resolvedWorkflowId = workflowId ?? projectId ?? `wf-${Date.now()}`
+    const config = flowToWorkflow(nodes, edges, resolvedWorkflowId, projectId)
     if (!config) {
-      toast.error('Flow is incomplete', {
-        description: 'Source node needs a URL · Export node needs an output folder.',
-      })
+      toast.error('Workflow is incomplete', { description: 'Add a source node with a URL and an output node.' })
       return
     }
-    if (!config.exportJson && !config.exportExcel && !config.exportCsv) {
-      toast.error('No export format selected', {
-        description: 'Enable at least one format in the Export node.',
-      })
+    const exportNode = nodes.find((n) => n.type === 'file-export')
+    const exportData = exportNode?.data as { exportJson?: boolean; exportExcel?: boolean; exportCsv?: boolean } | undefined
+    if (exportNode && !exportData?.exportJson && !exportData?.exportExcel && !exportData?.exportCsv) {
+      toast.error('No export format selected', { description: 'Enable JSON, Excel, or CSV in the File Export node.' })
       return
     }
     if (onSave) { onSave(nodes, edges); setIsDirty(false) }
-    scrapingStore.initJob(config)
-    window.electronAPI.startScraping(config).catch(() => {})
-    toast.success('Scraping started!', { description: config.baseUrl })
-    navigate('/progress')
-  }, [nodes, edges, scrapingStore, navigate, onSave])
+    jobStore.initJob(config, workflowName ?? projectName)
+    window.electronAPI.startWorkflow(config).catch(() => {})
+    // Open execution panel inline — no page redirect
+    setConfigNodeId(null)
+    setRightDrawer('execution')
+  }, [nodes, edges, jobStore, onSave, projectId, projectName, workflowId, workflowName])
 
-  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  // ── Running state ─────────────────────────────────────────────────────────
+  const activeJob     = useJobStore((s) => s.activeJob)
+  const isRunning     = activeJob?.status === 'running'
+  const isPaused      = activeJob?.status === 'paused'
+  const nodeStatusMap = useMemo(() => {
+    if (!activeJob) return {}
+    return Object.fromEntries(
+      Object.entries(activeJob.nodeStatuses).map(([nid, ns]) => [nid, ns.status]),
+    )
+  }, [activeJob])
 
+  // Open execution drawer whenever a new job starts (tracked by workflowId only)
+  const lastJobId = useRef<string | undefined>(undefined)
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const mod    = e.ctrlKey || e.metaKey
-      const target = e.target as HTMLElement
-      const inInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+    const id = activeJob?.workflowId
+    if (id && id !== lastJobId.current) {
+      lastJobId.current = id
+      setRightDrawer('execution')
+    }
+  }, [activeJob])
 
-      if (mod && e.key === 's' && onSave)                         { e.preventDefault(); handleSave();  return }
-      if (mod && e.key === 'z' && !e.shiftKey)                    { e.preventDefault(); handleUndo();  return }
-      if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))){ e.preventDefault(); handleRedo();  return }
+  // ── AI generate ─────────────────────────────────────────────────────────
+  const handleAIGenerate = useCallback(async (prompt: string): Promise<string | null> => {
+    if (settings.aiProvider === 'none' || !settings.aiApiKey) {
+      return 'AI not configured. Open Settings → AI to add a key.'
+    }
+    try {
+      const result = await window.electronAPI.generateWorkflow(prompt)
+      if (!result) return 'AI could not generate a workflow. Please try again.'
+      if ('__error' in result) return result.message
 
-      // Fit view
-      if (!inInput && e.key === 'f') {
-        e.preventDefault()
-        fitView({ padding: 0.2, duration: 300 })
-        return
+      // Normalise nodes: ensure position & data exist, sanitize type mismatches
+      const newNodes = (result.nodes as Node[]).map((n, i) => ({
+        ...n,
+        position: n.position ?? { x: i * 340, y: 100 },
+        data:     sanitizeNodeData(n.type ?? '', (n.data as Record<string, unknown>) ?? {}),
+      }))
+
+      // Normalise edges: our renderer requires type='custom' + animated
+      const newEdges = (result.edges as Edge[]).map((e, i) => ({
+        ...e,
+        id:       e.id ?? `ai-edge-${i}`,
+        type:     'custom',
+        animated: true,
+      }))
+
+      history.push(currentSnap())
+      setNodes(newNodes)
+      setEdges(newEdges)
+
+      // Save immediately — don't rely on the 3-second auto-save timer
+      if (onSave) {
+        if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+        onSave(newNodes, newEdges)
+        setIsDirty(false)
       }
 
-      // Delete selected
+      // Refit viewport so the generated nodes are visible (not off-screen / blank)
+      requestAnimationFrame(() => {
+        setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 50)
+      })
+
+      toast.success('Workflow generated by AI!')
+      return null
+    } catch {
+      return 'AI generation failed. Please try again.'
+    }
+  }, [settings, history, currentSnap, onSave, fitView])
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod     = e.ctrlKey || e.metaKey
+      const target  = e.target as HTMLElement
+      const inInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+
+      if (mod && e.key === 's' && onSave)                          { e.preventDefault(); handleSave(); return }
+      if (mod && e.key === 'z' && !e.shiftKey)                     { e.preventDefault(); handleUndo(); return }
+      if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); handleRedo(); return }
+      if (!inInput && e.key === 'f')                               { e.preventDefault(); fitView({ padding: 0.15, duration: 350 }); return }
+      if (!inInput && e.key === 'Escape') { setConfigNodeId(null); return }
+
       if (!inInput && (e.key === 'Delete' || e.key === 'Backspace')) {
-        const selNodes = nodes.filter(n => n.selected)
-        const selEdges = edges.filter(ed => ed.selected)
+        const selNodes = nodes.filter((n) => n.selected)
+        const selEdges = edges.filter((ed) => ed.selected)
         if (selNodes.length || selEdges.length) {
           history.push(currentSnap())
-          deleteElements({
-            nodes: selNodes.map(n => ({ id: n.id })),
-            edges: selEdges.map(ed => ({ id: ed.id })),
-          })
-          if (selNodes.some(n => n.id === configNodeId)) setConfigNodeId(null)
+          deleteElements({ nodes: selNodes.map((n) => ({ id: n.id })), edges: selEdges.map((ed) => ({ id: ed.id })) })
+          if (selNodes.some((n) => n.id === configNodeId)) setConfigNodeId(null)
         }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [
-    nodes, edges, history, currentSnap, deleteElements, configNodeId,
-    onSave, handleSave, handleUndo, handleRedo, fitView,
-  ])
+  }, [nodes, edges, history, currentSnap, deleteElements, configNodeId, onSave, handleSave, handleUndo, handleRedo, fitView])
 
-  // ── Derived ───────────────────────────────────────────────────────────────
-  const flowValid = isFlowValid(nodes)
+  const flowValid = isFlowValid(nodes, edges)
   const openPanel = useCallback((nodeId: string, tab: 'config' | 'preview' = 'config') => {
     setConfigNodeId(nodeId); setConfigTab(tab)
   }, [])
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
+    <NodeStatusProvider value={nodeStatusMap}>
     <NodeDetailProvider value={openPanel}>
-      <div className="flex flex-col h-screen bg-[#0f1117] overflow-hidden">
+      <div className="flex flex-col h-screen bg-[#0d0f1a] overflow-hidden">
 
         {/* ── Toolbar ── */}
-        <header className="flex items-center gap-1.5 px-4 py-2.5 border-b border-[#2e3350] bg-[#13151f] shrink-0">
+        <header className="flex items-center gap-2 px-4 py-2 border-b border-[#1e2235] bg-[#0d0f1a] shrink-0 h-12">
 
-          {/* Back breadcrumb */}
+          {/* Back + breadcrumb */}
           {projectId && (
-            <>
-              <button
-                onClick={() => navigate('/projects')}
-                className="flex items-center gap-1.5 text-slate-500 hover:text-slate-200 transition-colors shrink-0 group"
-                title="Back to Projects"
-              >
-                <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
-                <span className="text-xs text-slate-600 group-hover:text-slate-400 transition-colors hidden sm:inline">
-                  Projects
-                </span>
-              </button>
-              <span className="text-[#2e3350] text-xs shrink-0">/</span>
-            </>
+            <button
+              onClick={() => navigate('/projects')}
+              className="flex items-center gap-1.5 text-slate-500 hover:text-slate-200 transition-colors shrink-0 group"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+              <span className="text-[11px] text-slate-600 group-hover:text-slate-400 transition-colors hidden sm:inline">
+                Projects
+              </span>
+            </button>
           )}
 
-          {/* Title + validity */}
-          <div className="flex-1 min-w-0 mr-2">
-            <h1 className="text-sm font-semibold text-slate-100 truncate leading-none">
-              {projectName ?? 'Flow Builder'}
-            </h1>
-            <div className="flex items-center gap-1 mt-0.5">
+          {projectId && <span className="text-[#1e2235] shrink-0">/</span>}
+
+          {/* Workflow icon + name */}
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Workflow className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+            <span className="text-[12px] font-semibold text-slate-200 truncate">
+              {workflowName ?? projectName ?? 'Flow Builder'}
+            </span>
+            <div className="flex items-center gap-1 shrink-0">
               {flowValid
-                ? <><CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 shrink-0" /><span className="text-[10px] text-emerald-500">Ready to run</span></>
-                : <><AlertCircle  className="w-2.5 h-2.5 text-slate-600   shrink-0" /><span className="text-[10px] text-slate-600">Source URL &amp; export folder required</span></>}
+                ? <><CheckCircle2 className="w-3 h-3 text-emerald-500" /><span className="text-[10px] text-emerald-500 hidden md:inline">Ready</span></>
+                : <><AlertCircle  className="w-3 h-3 text-slate-600"   /><span className="text-[10px] text-slate-600 hidden md:inline">Incomplete</span></>}
             </div>
           </div>
 
-          {/* Node/edge counts */}
-          <div className="hidden lg:flex items-center gap-3 text-[10px] text-slate-600 shrink-0 border-r border-[#2e3350] pr-3 mr-1">
+          {/* Stats */}
+          <div className="hidden lg:flex items-center gap-3 text-[10px] text-slate-600 shrink-0 pr-3 border-r border-[#1e2235]">
             <span>{nodes.length} node{nodes.length !== 1 ? 's' : ''}</span>
-            <span>{edges.length} connection{edges.length !== 1 ? 's' : ''}</span>
+            <span>{edges.length} edge{edges.length !== 1 ? 's' : ''}</span>
           </div>
 
-          {/* ── Mode toggle: Select / Pan ── */}
-          <div
-            className="hidden sm:flex items-center gap-0.5 shrink-0 bg-[#0f1117] border border-[#2e3350] rounded-lg p-0.5 mr-1"
-            title={isPanMode ? 'Pan mode (Space to hold · click to lock)' : 'Select mode (Space = pan)'}
+          {/* Undo / Redo */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            {([
+              { action: handleUndo, can: history.canUndo, title: 'Undo (⌘Z)',         Icon: Undo2 },
+              { action: handleRedo, can: history.canRedo, title: 'Redo (⌘⇧Z / ⌘Y)', Icon: Redo2 },
+            ]).map(({ action, can, title, Icon }) => (
+              <button key={title} onClick={action} disabled={!can} title={title}
+                className={cn('w-7 h-7 flex items-center justify-center rounded-xl transition-colors',
+                  can ? 'text-slate-400 hover:text-slate-100 hover:bg-white/6' : 'text-slate-700 cursor-not-allowed')}>
+                <Icon className="w-3.5 h-3.5" />
+              </button>
+            ))}
+          </div>
+
+          {/* Separator */}
+          <div className="w-px h-5 bg-[#1e2235] shrink-0" />
+
+          {/* AI toggle */}
+          <TBtn
+            onClick={() => { setConfigNodeId(null); toggleDrawer('ai') }}
+            className={cn(
+              rightDrawer === 'ai'
+                ? 'text-pink-300 border-pink-500/60 bg-pink-950/40'
+                : 'text-pink-400 border-pink-500/30 bg-pink-950/20 hover:border-pink-500/60 hover:bg-pink-950/40 hover:text-pink-300',
+            )}
+            title="Build workflow with AI"
           >
-            {/* Select */}
-            <button
-              onClick={() => setLockedPanMode(false)}
-              className={cn(
-                'flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all',
-                !lockedPanMode
-                  ? 'bg-[#1e2133] text-slate-200 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-400',
-              )}
-              title="Select mode (default)"
-            >
-              <MousePointer2 className="w-3 h-3" />
-              <span className="hidden md:inline">Select</span>
-            </button>
-            {/* Pan */}
-            <button
-              onClick={() => setLockedPanMode(v => !v)}
-              className={cn(
-                'flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all',
-                lockedPanMode || spaceHeld
-                  ? 'bg-indigo-600/20 text-indigo-300 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-400',
-              )}
-              title="Pan mode (or hold Space)"
-            >
-              <Hand className="w-3 h-3" />
-              <span className="hidden md:inline">Pan</span>
-              {!lockedPanMode && (
-                <span className="hidden lg:inline text-[9px] text-slate-700 ml-0.5">Space</span>
-              )}
-            </button>
-          </div>
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">AI</span>
+          </TBtn>
 
-          {/* ── Undo / Redo ── */}
-          <div className="flex items-center gap-0.5 shrink-0 border-r border-[#2e3350] pr-1.5 mr-1">
-            <button
-              onClick={handleUndo}
-              disabled={!history.canUndo}
-              title="Undo (Ctrl+Z)"
-              className={cn(
-                'w-7 h-7 flex items-center justify-center rounded-md transition-colors',
-                history.canUndo
-                  ? 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
-                  : 'text-slate-700 cursor-not-allowed',
-              )}
-            >
-              <Undo2 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={handleRedo}
-              disabled={!history.canRedo}
-              title="Redo (Ctrl+Y)"
-              className={cn(
-                'w-7 h-7 flex items-center justify-center rounded-md transition-colors',
-                history.canRedo
-                  ? 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
-                  : 'text-slate-700 cursor-not-allowed',
-              )}
-            >
-              <Redo2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          {/* History toggle */}
+          <TBtn
+            onClick={() => { setConfigNodeId(null); toggleDrawer('history') }}
+            className={cn(
+              rightDrawer === 'history'
+                ? 'text-indigo-300 border-indigo-500/60 bg-indigo-950/40'
+                : 'text-indigo-400 border-indigo-500/20 hover:border-indigo-500/50 hover:text-indigo-300',
+            )}
+            title="Run history"
+          >
+            <History className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">History</span>
+          </TBtn>
 
           {/* Reset */}
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 border border-[#2e3350] hover:border-[#3d4470] hover:text-slate-200 bg-[#1a1d27] transition-colors shrink-0"
-            title="Reset pipeline"
-          >
+          <TBtn onClick={handleReset} title="Reset to default pipeline">
             <RotateCcw className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Reset</span>
-          </button>
+          </TBtn>
 
           {/* Save */}
           {onSave && (
-            <button
+            <TBtn
               onClick={handleSave}
               disabled={isSaving}
-              title="Save (Ctrl+S)"
+              title="Save (⌘S)"
               className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all shrink-0',
-                isSaving
-                  ? 'text-slate-500 border-[#2e3350] bg-[#1a1d27] cursor-default'
-                  : saveLabel === 'saved'
-                    ? 'text-emerald-400 border-emerald-500/40 bg-emerald-950/20'
-                    : isDirty
-                      ? 'text-amber-300 border-amber-500/40 bg-amber-950/20 hover:border-amber-400'
-                      : 'text-slate-400 border-[#2e3350] bg-[#1a1d27] hover:border-[#3d4470] hover:text-slate-200',
+                isSaving        ? 'text-slate-500'
+                : saveLabel === 'saved' ? 'text-emerald-400 border-emerald-500/40 bg-emerald-950/20'
+                : isDirty       ? 'text-amber-300 border-amber-500/40 bg-amber-950/20 hover:border-amber-500/60'
+                                : '',
               )}
             >
-              {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              {isSaving
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Save className="w-3.5 h-3.5" />}
               <span className="hidden sm:inline">
-                {isSaving ? 'Saving…' : saveLabel === 'saved' ? 'Saved!' : isDirty ? 'Unsaved' : 'Save'}
+                {isSaving ? 'Saving…' : saveLabel === 'saved' ? 'Saved!' : isDirty ? 'Save*' : 'Save'}
               </span>
-              {isDirty && !isSaving && saveLabel !== 'saved' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-              )}
-            </button>
+            </TBtn>
           )}
 
-          {/* Run */}
-          <button
-            onClick={handleRun}
-            title={flowValid ? 'Run scraping' : 'Complete the flow first'}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-colors shrink-0',
-              flowValid
-                ? 'bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-900/40'
-                : 'bg-indigo-600/40 cursor-default',
-            )}
-          >
-            <Play className="w-3.5 h-3.5 fill-white" />
-            <span className="hidden sm:inline">Run</span>
-          </button>
+          {/* Run / Pause / Stop */}
+          {(isRunning || isPaused) ? (
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Show execution panel button */}
+              <button
+                onClick={() => { setConfigNodeId(null); setRightDrawer('execution') }}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all',
+                  'border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20',
+                  rightDrawer === 'execution' && 'bg-indigo-500/20 border-indigo-500/60',
+                )}
+                title="View execution progress"
+              >
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span className="hidden sm:inline">{isPaused ? 'Paused' : 'Running…'}</span>
+              </button>
+
+              {/* Pause / Resume */}
+              <button
+                onClick={async () => {
+                  if (isPaused) {
+                    jobStore.setStatus('running')
+                    await window.electronAPI.resumeWorkflow()
+                    toast.info('Resumed')
+                  } else {
+                    jobStore.setStatus('paused')
+                    await window.electronAPI.pauseWorkflow()
+                    toast.info('Paused')
+                  }
+                }}
+                title={isPaused ? 'Resume' : 'Pause'}
+                className="w-7 h-7 flex items-center justify-center rounded-xl border border-[#2a2e45] text-slate-400 hover:text-white hover:border-amber-500/50 hover:bg-amber-500/10 transition-all"
+              >
+                {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+              </button>
+
+              {/* Stop */}
+              <button
+                onClick={async () => {
+                  await window.electronAPI.stopWorkflow()
+                  jobStore.stopJob()
+                  toast.warning('Workflow stopped')
+                }}
+                title="Stop"
+                className="w-7 h-7 flex items-center justify-center rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/15 hover:border-red-500/50 transition-all"
+              >
+                <Square className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleRun}
+              title={flowValid ? 'Run workflow (⌘↵)' : 'Complete the workflow first'}
+              className={cn(
+                'flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[11px] font-bold text-white transition-all duration-150 shrink-0',
+                flowValid
+                  ? 'bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-900/40 active:scale-95'
+                  : 'bg-indigo-600/25 text-indigo-300/50 cursor-not-allowed',
+              )}
+              disabled={!flowValid}
+            >
+              <Play className="w-3.5 h-3.5 fill-white" />
+              <span className="hidden sm:inline">Run</span>
+            </button>
+          )}
         </header>
 
         {/* ── Body ── */}
         <div className="flex flex-1 overflow-hidden">
+          {/* Palette (fixed) */}
           <NodePalette />
 
-          {/* Apply grab cursor class when in pan mode */}
-          <div
-            ref={wrapperRef}
-            className={cn('flex-1 relative overflow-hidden', isPanMode && 'flow-pan-mode')}
+          {/* Resizable canvas + right panel */}
+          <Group
+            orientation="horizontal"
+            className="flex-1 overflow-hidden"
+            defaultLayout={{ canvas: 66, right: 34 }}
           >
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onDrop={onDrop}
-              onDragOver={onDragOver}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.2 }}
-              deleteKeyCode={null}
-              defaultEdgeOptions={{ type: 'custom', animated: true }}
-              /* ── Interaction mode ──────────────── */
-              panOnDrag={lockedPanMode ? true : [1, 2]}   // locked = left drag pans; else middle/right only
-              panActivationKeyCode={lockedPanMode ? null : 'Space'} // Space = temp pan (when not locked)
-              selectionOnDrag={!lockedPanMode}             // rubber-band select when not locked
-              selectionMode={SelectionMode.Partial}        // partial overlap counts as selected
-              /* ─────────────────────────────────── */
-              style={{ background: '#0f1117' }}
-            >
-              <Background variant={BackgroundVariant.Dots} color="#1e2133" gap={20} size={1.2} />
-              <MiniMap
-                style={{ background: '#13151f', border: '1px solid #2e3350', borderRadius: 8 }}
-                nodeColor={(n) => ({
-                  source:    '#6366f1',
-                  category:  '#8b5cf6',
-                  movieList: '#10b981',
-                  detail:    '#f59e0b',
-                  export:    '#64748b',
-                })[n.type ?? ''] ?? '#334155'}
-                maskColor="rgba(15,17,23,0.7)"
-              />
-              <FlowControls />
-            </ReactFlow>
 
-            <NodeConfigPanel
-              nodeId={configNodeId}
-              nodes={nodes}
-              defaultTab={configTab}
-              onClose={() => { setConfigNodeId(null); setConfigTab('config') }}
-              onUpdateNodeData={handleUpdateNodeData}
-              onDeleteNode={handleDeleteNode}
-            />
-          </div>
+            {/* Canvas */}
+            <Panel id="canvas" className="relative overflow-hidden min-w-0">
+              <div ref={wrapperRef} className="w-full h-full relative">
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onDrop={onDrop}
+                  onDragOver={onDragOver}
+                  onNodeClick={onNodeClick}
+                  nodeTypes={nodeTypes}
+                  edgeTypes={edgeTypes}
+                  fitView
+                  fitViewOptions={{ padding: 0.2 }}
+                  deleteKeyCode={null}
+                  defaultEdgeOptions={{ type: 'custom', animated: true }}
+                  panOnDrag={[1, 2]}
+                  panActivationKeyCode="Space"
+                  selectionOnDrag
+                  selectionMode={SelectionMode.Partial}
+                  minZoom={0.1}
+                  maxZoom={2}
+                  style={{ background: '#0d0f1a' }}
+                  nodesDraggable
+                  nodesConnectable
+                  elementsSelectable
+                >
+                  <Background
+                    variant={BackgroundVariant.Dots}
+                    color="#1e2235"
+                    gap={24}
+                    size={1.5}
+                  />
+                  <MiniMap
+                    position="bottom-right"
+                    style={{
+                      background:   '#0d0f1a',
+                      border:       '1px solid #1e2235',
+                      borderRadius: 12,
+                      marginBottom: 12,
+                      marginRight:  12,
+                    }}
+                    nodeColor={(n) => NODE_COLOR_MAP[n.type ?? ''] ?? '#2a2e45'}
+                    maskColor="rgba(13,15,26,0.8)"
+                  />
+                  <FlowControls />
+                </ReactFlow>
+              </div>
+            </Panel>
+
+            {/* Resize handle — only when panel is open */}
+            {isRightPanelOpen && (
+              <Separator
+                onPointerDown={() => setIsDragging(true)}
+                onPointerUp={() => setIsDragging(false)}
+                className="group relative flex items-center justify-center"
+                style={{ width: 8, cursor: 'col-resize', flexShrink: 0, background: 'transparent', position: 'relative' }}
+              >
+                {/* Visible thin line */}
+                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-[#1e2235] group-hover:bg-indigo-500/50 transition-colors duration-150" />
+                {/* Grip dots that appear on hover */}
+                <div className="relative z-10 flex flex-col gap-[3px] opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                  {[0,1,2,3].map(i => (
+                    <div key={i} className="w-[3px] h-[3px] rounded-full bg-indigo-400/80" />
+                  ))}
+                </div>
+              </Separator>
+            )}
+
+            {/* Right drawer panel — resizable, min 26% max 55%, default 34% */}
+            <Panel
+              id="right"
+              panelRef={rightPanelRef}
+              collapsible
+              collapsedSize="0"
+              defaultSize="34"
+              minSize="26"
+              maxSize="55"
+              style={isDragging ? undefined : { transition: 'flex 0.22s cubic-bezier(0.4,0,0.2,1)' }}
+              className="overflow-hidden"
+            >
+              {configNodeId ? (
+                <NodeConfigPanel
+                  nodeId={configNodeId}
+                  nodes={nodes}
+                  edges={edges}
+                  defaultTab={configTab}
+                  onClose={() => { setConfigNodeId(null); setConfigTab('config') }}
+                  onUpdateNodeData={handleUpdateNodeData}
+                  onDeleteNode={handleDeleteNode}
+                />
+              ) : rightDrawer === 'execution' ? (
+                <ExecutionPanel onClose={() => setRightDrawer(null)} />
+              ) : rightDrawer === 'ai' ? (
+                <AIDrawerPanel
+                  onClose={() => setRightDrawer(null)}
+                  onGenerate={handleAIGenerate}
+                  apiConfigured={settings.aiProvider !== 'none' && !!settings.aiApiKey}
+                  projectId={projectId}
+                />
+              ) : rightDrawer === 'history' ? (
+                <HistoryDrawerPanel onClose={() => setRightDrawer(null)} />
+              ) : null}
+            </Panel>
+
+          </Group>
         </div>
       </div>
+
     </NodeDetailProvider>
+    </NodeStatusProvider>
   )
 }
 
